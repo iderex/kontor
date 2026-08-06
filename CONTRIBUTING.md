@@ -11,6 +11,7 @@ not an omission: the tree carries no application toolchain yet, so there is
 nothing local for a formatter, a lint gate or a test runner to be pointed at.
 
     git ls-tree --name-only HEAD
+    .gitattributes
     .github
     CONTRIBUTING.md
     DCO

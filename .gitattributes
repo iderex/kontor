@@ -1,0 +1,33 @@
+# Line endings are decided here and not by each clone's configuration. Two
+# toolchains across three operating systems is the setting in which a diff fills
+# with line ending noise, and a contributor whose clone happens to have
+# core.autocrlf set one way produces a diff nobody else can read.
+#
+# eol=lf rather than eol=native, in the index and in the working tree both. A
+# working tree that differs from the index by line ending is where the confusion
+# starts: a tool that reads a file from disk and one that reads it from git see
+# different bytes, and neither of them is wrong.
+#
+# What the tree holds is printed rather than restated here:
+#
+#     git ls-files | sed 's|.*/||' | sed -n 's/.*\(\.[A-Za-z0-9]*\)$/\1/p' | sort -u
+#
+# and how git is reading each tracked file after these rules apply:
+#
+#     git ls-files --eol
+
+# The default. text=auto leaves git to detect a binary file and to leave it
+# alone, so a future image or font is not normalised into corruption by this
+# line. Everything git reads as text is LF.
+* text=auto eol=lf
+
+# The text types in the tree today, declared rather than detected. text is not
+# text=auto here, because detection reading one of these as binary would silence
+# the rule for that file without saying so.
+*.md  text eol=lf
+*.yml text eol=lf
+
+# The two tracked files with no extension, anchored to the root so a later file
+# of the same name somewhere else does not inherit a rule aimed at these.
+/DCO     text eol=lf
+/LICENSE text eol=lf
