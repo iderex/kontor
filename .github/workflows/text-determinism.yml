@@ -1,7 +1,12 @@
-# Two refusals over the bytes git actually holds, not over the bytes in a
-# checkout. Both read the index rather than the working tree, because a clone
-# with core.autocrlf set writes CRLF into its working tree from an LF blob, and
-# a check reading that working tree would refuse a tree that is correct.
+# Three refusals about what a second clone will read, and the evidence that all
+# three bite. The first two read the index rather than the working tree, because
+# a clone with core.autocrlf set writes CRLF into its working tree from an LF
+# blob, and a check reading that working tree would refuse a tree that is
+# correct. The third remakes every generated file and refuses a difference.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
 name: text-determinism
 
 on:
@@ -12,7 +17,9 @@ on:
   pull_request:
     branches: ["**"]
 
-# Read-only: both jobs read the index and write nothing.
+# Read-only. Two jobs only read, and the two that remake a generated file write
+# it into the runner's own checkout and never back here: the difference is the
+# finding, and a job that could push would erase it.
 permissions:
   contents: read
 
@@ -33,33 +40,7 @@ jobs:
           # No step pushes, so do not leave the token in .git/config.
           persist-credentials: false
       - name: Reject a carriage return in tracked text
-        shell: bash
-        run: |
-          set -euo pipefail
-          # --cached searches the index, which is what .gitattributes normalises
-          # into and what another clone will check out from. -I skips whatever
-          # git reads as binary, where a carriage return is a byte and not a line
-          # ending. -P for \r, which the basic engine has no escape for.
-          #
-          # git grep: 0 = found, 1 = clean, 2 or above = the scanner failed.
-          # Capture the code so `set -e` does not abort on the clean exit 1, and
-          # fail closed on anything else rather than reading a broken scanner as
-          # a clean tree.
-          rc=0
-          git grep --cached -I -n -P '\r' -- . || rc=$?
-          case "$rc" in
-            0)
-              echo "::error::A carriage return is present in tracked text. Line endings are LF, fixed by .gitattributes. Re-add the file after 'git add --renormalize .'."
-              exit 1
-              ;;
-            1)
-              echo "No carriage return in tracked text."
-              ;;
-            *)
-              echo "::error::Scanner error (git grep exit $rc), failing closed rather than assuming the index is clean."
-              exit 1
-              ;;
-          esac
+        run: ./text-scan line-endings
 
   utf8-no-bom:
     name: Reject non UTF-8 and byte order marks in tracked text
@@ -70,38 +51,43 @@ jobs:
         with:
           persist-credentials: false
       - name: Reject non UTF-8 and byte order marks in tracked text
-        shell: bash
-        run: |
-          set -euo pipefail
-          fail=0
-          # A file is exempt only where .gitattributes declares it -text, which
-          # is a decision written in the tree and visible in a diff. Nothing is
-          # exempt by detection, because a detector reading a mangled UTF-16 file
-          # as binary would exempt exactly the file this check exists for.
-          #
-          # The loop reads from a process substitution rather than a pipe: a
-          # `while` on the right of a pipe runs in a subshell, and `fail` set
-          # there is discarded, which passes the job with findings in its log.
-          while IFS= read -r -d '' path; do
-            attr=$(git check-attr text -- "$path" | sed 's/.*: //')
-            if [ "$attr" = "unset" ]; then
-              echo "skip  $path (declared binary in .gitattributes)"
-              continue
-            fi
-            if ! git cat-file blob ":$path" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
-              echo "FAIL  $path is not valid UTF-8"
-              fail=1
-              continue
-            fi
-            if [ "$(git cat-file blob ":$path" | od -An -tx1 -N3 | tr -d ' \n')" = "efbbbf" ]; then
-              echo "FAIL  $path begins with a UTF-8 byte order mark"
-              fail=1
-              continue
-            fi
-            echo "ok    $path"
-          done < <(git ls-files -z)
-          if [ "$fail" -ne 0 ]; then
-            echo "::error::Tracked text must be UTF-8 with no byte order mark. Re-encode the files named above."
-            exit 1
-          fi
-          echo "All tracked text is UTF-8 with no byte order mark."
+        run: ./text-scan encoding
+
+  generated:
+    name: Reject a generated file that is not what its generator writes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version.
+          node-version-file: .nvmrc
+
+      - name: Remake every generated file and refuse a difference
+        # A hand edit to a generated file survives because nothing writes over
+        # it. This writes over it.
+        run: ./regenerate --check
+
+  proof:
+    name: Prove the determinism gates bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a fixture, runs the shipped script against it
+        # and reads the exit code, so a rule loosened where it lives reddens the
+        # leg that depended on it.
+        run: ./prove-determinism

@@ -1,0 +1,122 @@
+#!/bin/sh
+# Two refusals over tracked text, and both read the index rather than the
+# working tree. A clone with core.autocrlf set writes CRLF into its working tree
+# from an LF blob, so a check reading that working tree would refuse a tree that
+# is correct and would pass one that is not.
+#
+# Run from anywhere. With no argument it runs both:
+#
+#     text-scan
+#     text-scan line-endings
+#     text-scan encoding
+#
+# The workflow calls it with one argument per job, so each rule keeps its own
+# name on a pull request, and a contributor calls it with none.
+#
+# A second argument names the repository to read, and defaults to this one. It
+# exists so prove-determinism can point the shipped scanner at a fixture
+# repository rather than at a copy of these rules.
+#
+# POSIX sh, the means ./build already established, because both rules are
+# questions about bytes that git itself answers: git grep for the first and git
+# cat-file piped through iconv for the second. A program in either of the two
+# toolchains would have to be built before it could refuse anything, which is
+# the wrong order for a check that decides whether the tree is readable.
+#
+# prove-determinism is what shows this file bites, and it runs this file rather
+# than a copy of its rules.
+set -eu
+
+cd "$(CDPATH= cd "${2:-$(dirname "$0")}" && pwd)"
+
+line_endings() {
+    # --cached searches the index, which is what .gitattributes normalises into
+    # and what another clone checks out from. -I skips whatever git reads as
+    # binary, where a carriage return is a byte rather than a line ending. -P
+    # for \r, which the basic engine has no escape for.
+    #
+    # What -I skips is a file holding a NUL byte or one whose `diff` attribute
+    # is unset, and what the encoding rule below skips is a file whose `text`
+    # attribute is unset. Those are two different attributes, and git's `binary`
+    # macro is the declaration that unsets both, so it is the spelling to use
+    # when a binary file is added. Declaring only one of the two leaves the file
+    # judged by the other rule, which is the confusing half of a real refusal.
+    #
+    # git grep: 0 = found, 1 = clean, 2 or above = the scanner failed. The exit
+    # code is captured so `set -e` does not abort on the clean exit 1, and
+    # anything above 1 fails closed rather than being read as a clean tree.
+    rc=0
+    hits=$(git grep --cached -I -n -P '\r' -- .) || rc=$?
+    case "$rc" in
+        0)
+            printf '%s\n' "$hits" >&2
+            echo "text-scan: a carriage return is present in tracked text. Line endings are LF, fixed by .gitattributes. Re-add the file after 'git add --renormalize .'." >&2
+            return 1
+            ;;
+        1)
+            echo "text-scan: no carriage return in tracked text."
+            return 0
+            ;;
+        *)
+            echo "text-scan: git grep exited $rc. Failing closed rather than reading a broken scanner as a clean index." >&2
+            return 1
+            ;;
+    esac
+}
+
+encoding() {
+    fail=0
+    # A file is exempt only where .gitattributes declares it -text, which is a
+    # decision written in the tree and visible in a diff. Nothing is exempt by
+    # detection, because a detector reading a mangled UTF-16 file as binary
+    # would exempt exactly the file this check exists for.
+    #
+    # The loop reads from a redirect rather than the right hand side of a pipe,
+    # where it would run in a subshell and the value of `fail` set inside it
+    # would be discarded, passing the check with its findings in the log.
+    #
+    # A path is read one per line, so a tracked path containing a newline
+    # arrives here as two paths that name nothing. Neither can be read out of
+    # the index, and the first branch below refuses on exactly that, so such a
+    # tree fails rather than passing with a file nobody looked at.
+    while IFS= read -r path; do
+        if ! git cat-file -e ":$path" 2>/dev/null; then
+            echo "  FAIL  $path cannot be read out of the index" >&2
+            fail=1
+            continue
+        fi
+        attr=$(git check-attr text -- "$path" | sed 's/.*: //')
+        if [ "$attr" = "unset" ]; then
+            echo "  skip  $path (declared binary in .gitattributes)"
+            continue
+        fi
+        if ! git cat-file blob ":$path" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
+            echo "  FAIL  $path is not valid UTF-8" >&2
+            fail=1
+            continue
+        fi
+        if [ "$(git cat-file blob ":$path" | od -An -tx1 -N3 | tr -d ' \n')" = "efbbbf" ]; then
+            echo "  FAIL  $path begins with a UTF-8 byte order mark" >&2
+            fail=1
+            continue
+        fi
+    done <<EOF
+$(git ls-files)
+EOF
+    if [ "$fail" -ne 0 ]; then
+        echo "text-scan: tracked text is UTF-8 with no byte order mark. Re-encode the files named above." >&2
+        return 1
+    fi
+    echo "text-scan: all tracked text is UTF-8 with no byte order mark."
+    return 0
+}
+
+case "${1-}" in
+    line-endings) line_endings ;;
+    encoding)     encoding ;;
+    "")           line_endings && encoding ;;
+    *)
+        echo "text-scan: '$1' is not a rule this scans. Use line-endings, encoding, or no argument for both." >&2
+        exit 2
+        ;;
+esac
