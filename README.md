@@ -8,4 +8,6 @@ that depends on it exists.
 
 See [NOTICE.md](NOTICE.md) for the intended-use notice.
 
+See [docs/acceptable-use.md](docs/acceptable-use.md) for the uses this project does not support, and for what the software does not do to prevent them.
+
 See [LICENSE](LICENSE) for the terms, the GNU Affero General Public License version 3.
