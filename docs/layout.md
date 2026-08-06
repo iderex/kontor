@@ -10,9 +10,13 @@ tree holds today is smaller, and reading it is one command:
 
     git ls-tree --name-only HEAD
     .github
+    CONTRIBUTING.md
+    DCO
     LICENSE
     NOTICE.md
     README.md
+    SECURITY.md
+    docs
 
 So most of what follows names a directory that does not exist yet. That is
 deliberate: #2 builds the skeleton against this note, and where the skeleton and
