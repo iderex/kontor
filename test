@@ -36,6 +36,46 @@ command -v cargo >/dev/null 2>&1 || {
     exit 1
 }
 
+# What is marked, and what each marked target needs. Printed rather than written
+# into a document, because a list in a document drifts against the manifests and
+# the drift is invisible until somebody trusts the list.
+if [ "${1-}" = "--marked" ]; then
+    command -v node >/dev/null 2>&1 || {
+        echo "test: node is not on the path, and it is what reads cargo's JSON here. CONTRIBUTING.md says what to install." >&2
+        exit 1
+    }
+    cargo metadata --format-version 1 --no-deps --manifest-path server/Cargo.toml \
+        | node -e '
+let raw = "";
+process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+  const meta = JSON.parse(raw);
+  const rows = [];
+  for (const pkg of meta.packages) {
+    for (const target of pkg.targets) {
+      if (!target.kind.includes("test")) continue;
+      const marks = target["required-features"] || [];
+      if (marks.length > 0) rows.push(`${pkg.name}  ${target.name}  ${marks.join(" ")}`);
+    }
+  }
+  if (rows.length === 0) {
+    process.stdout.write("test: no test target is marked, so ./test runs every one of them.\n");
+    return;
+  }
+  process.stdout.write("test: these targets are excluded from ./test, and this is what each needs.\n");
+  for (const row of rows) process.stdout.write(`  ${row}\n`);
+});
+'
+    exit 0
+fi
+
+# Before anything is compiled. An unmarked test that reaches for a display, an
+# outbound socket, a simulator or a database fails somewhere in the middle of a
+# run with a message about a connection, which reads like a flake and passes on
+# the next machine. Refusing the source first puts the cause and the failure in
+# the same place. ./test-scan is the rule and ./prove-headless is what says it
+# bites.
+./test-scan
+
 echo "test: the unit suite, with nothing outside this machine reached"
 cargo test --manifest-path server/Cargo.toml --workspace --locked "$@"
 
