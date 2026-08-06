@@ -13,11 +13,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # No `name:` on this job: the "Protect main" ruleset's required status check
-  # matches the literal check-run name, which defaults to the job id
-  # ("dependency-review") when no `name:` is set. Overriding it here would
-  # rename the check run and silently break the required-status-check gate.
+  # The name is written out, like every other job in this tree. It used to be
+  # left off, and the comment saying why named a ruleset called "Protect main"
+  # and a required status check inside it. Neither exists. What the repository
+  # holds is one ruleset, and it requires no check at all:
+  #
+  #     gh api repos/iderex/kontor/rulesets --jq '.[] | {name, target}'
+  #     {"name":"gate","target":"branch"}
+  #     gh api repos/iderex/kontor/rulesets/20486686 \
+  #       --jq '{required: [.rules[].type], checks: [.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context]}'
+  #     {"required":["deletion","non_fast_forward","pull_request"],"checks":[]}
+  #
+  # So nothing was matching this check name, and the reason for leaving it
+  # derived from the job id was a mechanism nobody had looked at. Which checks
+  # stand in front of the default branch is #108, and when that lands it will
+  # match names that are written down rather than names that fall out of a key.
   dependency-review:
+    name: Review new dependencies against the advisory database
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
