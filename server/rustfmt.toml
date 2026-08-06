@@ -1,0 +1,29 @@
+# How the server is formatted. The default is taken everywhere it can be, so
+# this file holds deviations and nothing else: a setting written here to restate
+# a default is a setting somebody will later argue about, and the argument is
+# the tax this file exists to stop paying.
+#
+# It sits beside server/Cargo.toml rather than at the repository root, which is
+# the rule docs/layout.md states: the toolchain pins are one repository-wide
+# fact and live at the root, and a workspace's own configuration lives at the
+# root of that workspace. rustfmt walks up from each file it formats, so both
+# places would be found; the reason for this one is which statement the file is
+# making.
+#
+# What rustfmt was asked for is readable rather than remembered:
+#
+#     cargo fmt --manifest-path server/Cargo.toml -- --print-config current \
+#       | grep -E '^(newline_style|edition|style_edition) '
+#
+# The style edition is not set here. cargo passes the package edition, which is
+# 2024 in server/Cargo.toml, and a number typed here would be a second pin that
+# drifts against the first one silently. That is the same reason .nvmrc is a
+# file rather than a number in a workflow.
+
+# The one deviation. The default is Auto, which reads the line endings already
+# in a file and keeps them, so a file that arrived with carriage returns keeps
+# them and rustfmt reports nothing. This repository decides line endings in
+# .gitattributes and ./text-scan refuses a carriage return in tracked text, so
+# Auto would leave the formatter agreeing with a file the tree refuses. Unix
+# makes the formatter say the same thing the scanner says.
+newline_style = "Unix"

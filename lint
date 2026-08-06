@@ -1,0 +1,79 @@
+#!/bin/sh
+# The lint gate, over both layers.
+#
+#     ./lint               every leg
+#     ./lint server        clippy over the Rust workspace
+#     ./lint client        oxlint over the TypeScript workspace
+#     ./lint suppressions  refuse a suppression that names no rule or gives no reason
+#
+# A formatter makes the tree consistent; a lint gate refuses shapes that are
+# consistent and still wrong. They are separate commands because they are
+# separate questions, and because a run that reformatted a file on its way to a
+# lint verdict would be a gate that edits the thing it judges.
+#
+# THE LEVEL IS WHERE A WARNING FAILS. Neither leg is run at a level where a
+# warning is printed and survives, because a warning that does not fail is a
+# warning that accumulates: the first is read, the tenth is scrolled past, and
+# by the hundredth the output carries no information. Where each leg's level is
+# set differs, and it is set once in each case rather than here and somewhere
+# else as well:
+#
+#     server/Cargo.toml   [workspace.lints], including warnings = "deny"
+#     client/.oxlintrc.json  the categories, raised to a failure by
+#                            --deny-warnings in client/package.json
+#
+# So loosening a rule where it lives loosens it here too, and the legs in
+# ./prove-quality that depended on it go red.
+#
+# POSIX sh, matching ./build, and holding no rule of its own for the reason
+# above: a rule stated here would be one neither linter reads.
+#
+# ./prove-quality is what shows every leg bites.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+leg=${1-all}
+case "$leg" in
+    server | client | suppressions | all) ;;
+    *)
+        echo "lint: '$leg' is not a leg. Use server, client, suppressions, or nothing for all." >&2
+        exit 1
+        ;;
+esac
+
+# --all-targets so tests and examples are judged too. A test is code an operator
+# never runs and a reviewer always reads, and it is where an unchecked shortcut
+# is least likely to be noticed. --locked so the lint run cannot be the thing
+# that quietly updates a dependency.
+lint_server() {
+    echo "lint: server"
+    cargo clippy --manifest-path server/Cargo.toml --workspace --all-targets --locked
+}
+
+lint_client() {
+    if [ ! -x client/node_modules/.bin/oxlint ]; then
+        echo "lint: the client workspace is not installed. Run 'npm ci --prefix client' first." >&2
+        exit 1
+    fi
+    echo "lint: client"
+    npm run --silent lint --prefix client
+}
+
+lint_suppressions() {
+    echo "lint: suppressions"
+    client/suppression-scan
+}
+
+case "$leg" in
+    server) lint_server ;;
+    client) lint_client ;;
+    suppressions) lint_suppressions ;;
+    all)
+        lint_server
+        lint_client
+        lint_suppressions
+        ;;
+esac
+
+echo "lint: every leg asked for is clean."

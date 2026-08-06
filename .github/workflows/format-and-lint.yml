@@ -1,0 +1,138 @@
+# The formatter and the lint gate, over both layers, and the evidence that all
+# four bite.
+#
+# Every job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+#
+# One job per layer per gate rather than one job running ./format --check and
+# ./lint together: a failing check should name one thing to fix, and a
+# contributor reading a red tick should not have to open the log to find out
+# which of four gates it was.
+#
+# Neither toolchain version appears here. rustup applies /rust-toolchain.toml on
+# its own inside the checkout, which is also what installs rustfmt and clippy
+# since that file names them as components, and setup-node is pointed at /.nvmrc
+# rather than at a number typed here.
+name: format-and-lint
+
+on:
+  # Every branch and every pull request. Formatting and lint are about what is
+  # committed, so they have to hold on a branch that never becomes a pull
+  # request too.
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. No job writes anything back: the checking half of ./format writes
+# nothing by construction, and a job that could push would be a gate quietly
+# fixing the thing it was asked to judge.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-server:
+    name: Check the server formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the server formatting
+        run: ./format --check server
+
+  format-client:
+    name: Check the client formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version.
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Check the client formatting
+        run: ./format --check client
+
+  lint-server:
+    name: Lint the server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the server
+        run: ./lint server
+
+  lint-client:
+    name: Lint the client
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Lint the client
+        run: ./lint client
+
+  suppressions:
+    name: Reject a lint suppression naming no rule or giving no reason
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject a lint suppression naming no rule or giving no reason
+        # The rule lives in the script, which a contributor can run before
+        # pushing and which the proof below runs as well, so there is one
+        # statement of it rather than one here and one somewhere else.
+        run: ./lint suppressions
+
+  proof:
+    name: Prove the formatter and the lint gate bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control, and the cheapest way for one to stop working is for it to go
+        # on passing. Each leg runs the shipped command against a fixture and
+        # reads the exit code, so loosening a rule where it lives reddens the
+        # leg that depended on it.
+        run: ./prove-quality

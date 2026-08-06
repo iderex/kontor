@@ -1,0 +1,87 @@
+{
+  // What the client lint gate refuses. A formatter makes the tree consistent; a
+  // lint gate refuses shapes that are consistent and still wrong, which is why
+  // this is a separate file from .prettierrc.yml and a separate command.
+  //
+  // The categories are oxlint's own groupings and are named here rather than
+  // left at their defaults, so that a reader can see which ones were chosen.
+  // Only `correctness` is on by default. Everything below it is a deliberate
+  // addition, and each one is a level a warning is raised to rather than a list
+  // of rules somebody has to keep up to date.
+  //
+  // The severity written here is `warn` throughout, and the shipped command
+  // passes --deny-warnings, which turns every one of them into a failure. That
+  // is one place to change the level rather than two, and it means running
+  // `oxlint` by hand shows the whole set while the gate refuses on it.
+  "categories": {
+    // Outright wrong or useless code. On by default; named so that a later
+    // change cannot turn it off without deleting a line somebody has to
+    // explain.
+    "correctness": "warn",
+    // Most likely wrong. The category holding the mistakes that look
+    // deliberate, which is the class a reviewer is worst at catching.
+    "suspicious": "warn",
+    // Strict, with occasional false positives. Taken now rather than later
+    // because the workspace is one file: turning it on over a client that grew
+    // without it is a change nobody makes.
+    "pedantic": "warn",
+    // Written in a more performant way. Cheap here and the client is the layer
+    // where a loop in the wrong place is felt by a person waiting.
+    "perf": "warn"
+  },
+
+  // `style` is NOT taken, and it was measured rather than waved away. Against
+  // the workspace as it stands it refuses twenty two places:
+  //
+  //     npm exec --prefix client -- oxlint --deny style 2>&1 | grep -c 'error '
+  //     22
+  //
+  // and what it asks for is a capital letter at the start of every comment, a
+  // default export in every module, a named constant in place of the literal
+  // zero, and function expressions rather than declarations. Those are house
+  // style positions, this tree has argued for none of them, and a gate
+  // enforcing an unargued style is the formatting argument this project decided
+  // not to have. Prettier owns the shape of a line here; nothing owns the shape
+  // of a module, and until something does this category stays off.
+  //
+  // `restriction` and `nursery` are NOT taken either. restriction is a menu of
+  // lints that each ban a language feature for somebody's particular reason
+  // rather than a set with one meaning, so taking the group would be taking
+  // opinions nobody in this tree has argued for. nursery is under development
+  // and moves between releases, which is a gate whose verdict changes without
+  // the tree changing.
+
+  "plugins": [
+    // TypeScript-aware rules. On by default and named for the same reason
+    // correctness is.
+    "typescript",
+    // oxlint's own rules, which have no upstream equivalent. On by default.
+    "oxc",
+    // A floating promise in a browser client is an error that is reported
+    // nowhere, and this is the plugin that refuses one.
+    "promise",
+    // The rules that catch a module graph that does not resolve. This client
+    // will depend on a generated contract, and an import of something that is
+    // not there should fail here rather than at run time in a browser.
+    "import"
+  ],
+
+  // unicorn is on by default in oxlint and is turned off here. Its rules are
+  // about a house style rather than about correctness, this tree has not argued
+  // for that house style anywhere, and a gate enforcing an unargued style is
+  // the formatting argument this project decided not to have.
+  "env": {
+    "browser": true,
+    "es2023": true
+  },
+
+  "ignorePatterns": ["dist", "node_modules"],
+
+  "rules": {
+    // The escape from the type system is judged by client/escape-scan, which
+    // asks for a reason on the same line rather than refusing the escape. Two
+    // gates refusing the same bytes with different answers is worse than one,
+    // so this one stands aside.
+    "typescript/no-explicit-any": "off"
+  }
+}

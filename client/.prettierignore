@@ -1,0 +1,13 @@
+# What the formatter does not own.
+#
+# node_modules and dist are already ignored by prettier's own defaults and by
+# /.gitignore; they are written out here anyway, because the reason a file is
+# skipped should be readable in one place rather than assembled from three.
+node_modules/
+dist/
+
+# The lock file is generated. ./regenerate remakes it from client/package.json
+# and refuses a difference, and npm rewrites it from its own model on every run,
+# so a formatter's opinion about it would be overwritten by the next install and
+# would fail ./regenerate --check in between.
+package-lock.json

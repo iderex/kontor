@@ -1,0 +1,34 @@
+# The crate the lint gate is shown to bite on. It is a workspace member, which
+# is the whole point: `[lints] workspace = true` is what pulls in the levels
+# server/Cargo.toml sets, so every leg in ./prove-quality is judged by the
+# shipped configuration rather than by a copy of it. A fixture outside the
+# workspace could not inherit that table and would have to restate the rules,
+# which is the arrangement that lets a rule be loosened where it lives while the
+# proof goes on passing.
+#
+# It sits under fixtures/ rather than under crates/ because crates/ holds the
+# server modules docs/layout.md describes and this is not one of them.
+#
+# Every arm that must be refused is behind a feature that is off by default, so
+# `cargo build`, `cargo clippy --workspace` and the build workflow all see a
+# crate with nothing in it. Only ./prove-quality asks for an arm, and it asks
+# for one at a time.
+
+[package]
+name = "kontor-lint-fixture"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# One feature per refusal, named for the rule it trips rather than for the code
+# it holds, so a leg that goes green says which rule stopped refusing.
+unwrap = []
+warning = []
+suppression = []

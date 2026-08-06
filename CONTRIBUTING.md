@@ -80,11 +80,55 @@ macro. Nothing is exempt from the encoding rule by detection, which is
 deliberate: a detector reading a mangled file as binary would exempt exactly the
 file the rule exists for.
 
-What `./build` does not do is run a formatter, a lint gate or a test suite,
-because none of those exist yet. #3 adds formatting and lint, #5 adds the test
-harness and the coverage floor, and #6 puts them all on the pull request under
-stable names. Until they land, `./build` says the tree compiles and says nothing
-about whether it is correct.
+Formatting and lint are two more commands, and they are two rather than one
+because they answer different questions. A formatter makes the tree consistent;
+a lint gate refuses shapes that are consistent and still wrong.
+
+    ./format
+    ./format --check
+    ./lint
+    ./prove-quality
+
+The first formats both layers. The second says whether they are formatted and
+writes nothing, which is what the workflow runs, and either of them takes
+`server` or `client` to do one layer. `./lint` runs every leg and takes
+`server`, `client` or `suppressions` to run one. The last is the evidence that
+all four gates refuse what they say they refuse, against the fixtures under
+`server/fixtures/` and others it builds as it goes.
+
+Do not argue with a formatter default. Both toolchains have one that is
+defensible and it is taken, so that the argument does not have to be won. Where
+a default is not taken the deviation lives in that layer's configuration file
+with the reason on the line above it, which is `server/rustfmt.toml` and
+`client/.prettierrc.yml`, and a deviation with no reason above it is the thing
+to send back in review.
+
+The lint gate runs at a level where a warning fails. That level is set once per
+layer, in `server/Cargo.toml` under `[workspace.lints]` and in
+`client/.oxlintrc.json`, and never on a command line, so your terminal and the
+workflow reach the same verdict.
+
+A suppression is allowed and an anonymous one is not. Name the rule and give the
+reason in the same place as the suppression, so that moving it moves its
+justification with it:
+
+    #[expect(dead_code, reason = "the trait is implemented for #29 and used there")]
+
+    // oxlint-disable-next-line no-await-in-loop -- the calls must be ordered
+
+On the server that is refused by clippy, through `allow_attributes` and
+`allow_attributes_without_reason`. On the client it is refused by a script,
+`client/suppression-scan`, because the linter this workspace can install has no
+rule for it and honours a blanket suppression silently. The comment at the top
+of that script carries the command showing why the linter is the one it is, and
+`./prove-quality` has a leg that demonstrates the silence rather than asserting
+it.
+
+What `./build`, `./format` and `./lint` between them do not do is run a test
+suite, because none exists yet. #5 adds the harness and the coverage floor, #7
+makes the headless rule a gate, and #6 puts everything on the pull request under
+stable names. Until they land, the tree is compiled, formatted and linted, and
+nothing says whether it is correct.
 
 The tree it builds:
 
@@ -102,8 +146,14 @@ The tree it builds:
     build
     client
     docs
+    format
+    lint
+    prove-determinism
+    prove-quality
+    regenerate
     rust-toolchain.toml
     server
+    text-scan
 
 ## What runs on a pull request
 
