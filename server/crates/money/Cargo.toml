@@ -1,0 +1,27 @@
+[package]
+name = "kontor-money"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# The time zone database, and the reason this crate has a dependency at all.
+# Period boundaries for a moment in time cannot be computed without one, and a
+# rule table maintained here would be wrong within a year of being written.
+# jiff carries the database and keeps a civil date, which has no zone, in a
+# different type from a moment, which has one; that distinction is the decision
+# docs/decisions/0005-money-and-time.md records, so the dependency expresses it
+# rather than working around it.
+jiff = "0.2.35"
+
+# No dev-dependencies. The properties in tests/properties.rs are checked over
+# every value of a bounded domain rather than over samples of it, which needs no
+# generator and is a stronger statement than a sampled run. A property testing
+# crate was tried here first and brought twenty five transitive crates for the
+# privilege of covering less.

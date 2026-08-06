@@ -115,8 +115,16 @@ cannot redden the application's own build.
 The server modules form a stack, and the whole point of the stack is that the
 arrows all point one way.
 
-At the bottom is the store, which owns the tables and is the only thing that
-talks to the database. Above it the metadata layer, which holds objects, fields,
+Beside the stack rather than in it is the money module, which depends on nothing
+inside the server and which every layer above may use. It holds an amount, a
+currency, a conversion rate with the moment it was taken, a calendar date and a
+moment in time, as the types `docs/decisions/0005-money-and-time.md` argues for
+under #22. It is not a layer of the stack because it has no state and talks to
+nothing; it is a vocabulary, and putting it in the stack would mean choosing a
+level for something every level needs.
+
+At the bottom of the stack itself is the store, which owns the tables and is the
+only thing that talks to the database. Above it the metadata layer, which holds objects, fields,
 types and validation as run time data and turns a change to them into a reviewed
 migration under #18. Above that the record module, which owns the single write
 path: every write to a record and its history commits in one transaction, which
