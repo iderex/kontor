@@ -1,0 +1,88 @@
+# No `labels:` key. See config.yml for why. In particular nothing here applies
+# `bug`, because whether a report is a bug is the thing that has not been
+# decided when the report arrives.
+name: Something went wrong while running it
+description: For an operator running this software who hit behaviour that looks wrong.
+title: "<what happened, in one line>"
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        This form asks only for what somebody answering the report cannot find
+        out on their own. You do not need to know how the software is built to
+        fill it in, and a guess about the cause is welcome but never required.
+
+
+        If what you hit looks like a way for somebody to get at data they should
+        not see, do not file it here. The tracker is public. SECURITY.md has the
+        private route and says what happens to a report sent through it.
+
+
+        Leave real customer data out of anything you paste. Names, addresses and
+        message contents belong to the people they are about, and an issue here
+        is world readable forever.
+
+  - type: input
+    id: version
+    attributes:
+      label: What you are running
+      description: >-
+        The version if you installed one. If you built it yourself, the commit
+        you built from, which `git rev-parse HEAD` prints in the directory you
+        built in. There is no release yet, so today this is a commit for
+        everybody.
+      placeholder: built from 6b9bc27
+    validations:
+      required: true
+
+  - type: textarea
+    id: deployment
+    attributes:
+      label: How it is deployed
+      description: >-
+        Enough for somebody to stand up something close to yours. The operating
+        system, whether it runs in a container or directly, which database it
+        talks to, and anything sitting in front of it such as a proxy or a login
+        service. Say if you do not know a part of it; not knowing is an answer.
+      placeholder: >-
+        Debian 13, container, PostgreSQL 17 on the same host, behind nginx with
+        a company login in front of it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: >-
+        Both halves. The second one on its own leaves the reader guessing at the
+        first, and the guess is often what makes a report get closed as working
+        as intended.
+      placeholder: >-
+        I expected the deal to stay in the stage I moved it to. After I
+        refreshed the page it was back in the previous stage and nothing said it
+        had moved.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to get it to happen again
+      description: >-
+        The steps if you know them. If it happened once and you cannot repeat
+        it, say that. An intermittent report is still a report and pretending it
+        is reproducible wastes the time of whoever tries.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything the software printed
+      description: >-
+        Log lines, an error on screen, or the response you got back. Remove
+        anything that identifies a real person or company before pasting.
+      render: text
+    validations:
+      required: false

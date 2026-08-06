@@ -1,0 +1,12 @@
+# No template here applies a label. A label is a triage judgement, and one
+# applied by the form asserts that somebody read the issue and placed it when
+# nobody has. Labelling happens after a person reads the issue.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/iderex/kontor/security/advisories/new
+    about: >-
+      Something you believe is exploitable goes through private reporting and
+      never through a public issue. SECURITY.md says what a reporter can expect
+      and by when.
