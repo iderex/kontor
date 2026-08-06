@@ -9,6 +9,7 @@ The layout described here is the one the tree is being built towards. What the
 tree holds today is smaller, and reading it is one command:
 
     git ls-tree --name-only HEAD
+    .gitattributes
     .github
     CONTRIBUTING.md
     DCO
@@ -171,12 +172,14 @@ two are not confused:
     dco.yml
     dependency-review.yml
     scorecard.yml
+    text-determinism.yml
     unicode-guard.yml
     zizmor.yml
 
-Those judge sign off, dependency advisories, supply chain hygiene, dangerous
-Unicode and the workflow files themselves. None of them reads a module boundary,
-and none of them could, because there are no modules yet.
+Those judge sign off, dependency advisories, supply chain hygiene, line endings
+and encoding in tracked text, dangerous Unicode, and the workflow files
+themselves. None of them reads a module boundary, and none of them could,
+because there are no modules yet.
 
 Two issues would move items from the second list to the first. #116 turns the
 architecture rules into tests, which is where the dependency direction and the

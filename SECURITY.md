@@ -59,6 +59,7 @@ The tree today is smaller than the plan on the tracker, which changes what
 there is to test:
 
     git ls-tree --name-only HEAD
+    .gitattributes
     .github
     CONTRIBUTING.md
     DCO

@@ -1,0 +1,107 @@
+# Two refusals over the bytes git actually holds, not over the bytes in a
+# checkout. Both read the index rather than the working tree, because a clone
+# with core.autocrlf set writes CRLF into its working tree from an LF blob, and
+# a check reading that working tree would refuse a tree that is correct.
+name: text-determinism
+
+on:
+  # Every branch and every pull request. The rule is about what is committed, so
+  # it has to hold on a branch that never becomes a pull request too.
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: both jobs read the index and write nothing.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-carriage-return:
+    name: Reject a carriage return in tracked text
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+      - name: Reject a carriage return in tracked text
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --cached searches the index, which is what .gitattributes normalises
+          # into and what another clone will check out from. -I skips whatever
+          # git reads as binary, where a carriage return is a byte and not a line
+          # ending. -P for \r, which the basic engine has no escape for.
+          #
+          # git grep: 0 = found, 1 = clean, 2 or above = the scanner failed.
+          # Capture the code so `set -e` does not abort on the clean exit 1, and
+          # fail closed on anything else rather than reading a broken scanner as
+          # a clean tree.
+          rc=0
+          git grep --cached -I -n -P '\r' -- . || rc=$?
+          case "$rc" in
+            0)
+              echo "::error::A carriage return is present in tracked text. Line endings are LF, fixed by .gitattributes. Re-add the file after 'git add --renormalize .'."
+              exit 1
+              ;;
+            1)
+              echo "No carriage return in tracked text."
+              ;;
+            *)
+              echo "::error::Scanner error (git grep exit $rc), failing closed rather than assuming the index is clean."
+              exit 1
+              ;;
+          esac
+
+  utf8-no-bom:
+    name: Reject non UTF-8 and byte order marks in tracked text
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject non UTF-8 and byte order marks in tracked text
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          # A file is exempt only where .gitattributes declares it -text, which
+          # is a decision written in the tree and visible in a diff. Nothing is
+          # exempt by detection, because a detector reading a mangled UTF-16 file
+          # as binary would exempt exactly the file this check exists for.
+          #
+          # The loop reads from a process substitution rather than a pipe: a
+          # `while` on the right of a pipe runs in a subshell, and `fail` set
+          # there is discarded, which passes the job with findings in its log.
+          while IFS= read -r -d '' path; do
+            attr=$(git check-attr text -- "$path" | sed 's/.*: //')
+            if [ "$attr" = "unset" ]; then
+              echo "skip  $path (declared binary in .gitattributes)"
+              continue
+            fi
+            if ! git cat-file blob ":$path" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
+              echo "FAIL  $path is not valid UTF-8"
+              fail=1
+              continue
+            fi
+            if [ "$(git cat-file blob ":$path" | od -An -tx1 -N3 | tr -d ' \n')" = "efbbbf" ]; then
+              echo "FAIL  $path begins with a UTF-8 byte order mark"
+              fail=1
+              continue
+            fi
+            echo "ok    $path"
+          done < <(git ls-files -z)
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Tracked text must be UTF-8 with no byte order mark. Re-encode the files named above."
+            exit 1
+          fi
+          echo "All tracked text is UTF-8 with no byte order mark."
