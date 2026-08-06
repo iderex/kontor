@@ -1,0 +1,42 @@
+#!/bin/sh
+# The unit suite. One command, and it needs nothing from the outside world.
+#
+#     ./test
+#
+# What "unit" means here is a rule rather than a habit. A test in this suite
+# runs with no display server, no administrative rights and no reachable
+# network, and a test that needs a real database is not one of these: it belongs
+# to ./test-needs-a-database, which is a separate command whose name says what
+# it needs.
+#
+# The separation is made by cargo and not by anybody's memory. A test target
+# that needs something declares `required-features` in its crate's manifest, and
+# cargo does not build a target whose required features are off, so the default
+# run leaves it out without an argument anybody has to remember to pass. #7
+# widens that marking to the four things a test in this project can need, and
+# makes an unmarked test that reaches for one of them fail at collection.
+#
+# This is the server suite and it is the whole suite that exists. The client
+# workspace has no tests and no runner: #63 makes the web client testable and is
+# where its half of this belongs. Saying so here is cheaper than a client leg
+# that runs nothing and reports green.
+#
+# --locked so the suite cannot be the thing that quietly updates a dependency,
+# which would make a green run and the resolution it ran against two different
+# facts.
+#
+# POSIX sh, matching ./build, because this runs the toolchain's own verb and
+# adds no test rules of its own.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "test: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+echo "test: the unit suite, with nothing outside this machine reached"
+cargo test --manifest-path server/Cargo.toml --workspace --locked "$@"
+
+echo "test: green. ./coverage is what says how much of the tree it touched."

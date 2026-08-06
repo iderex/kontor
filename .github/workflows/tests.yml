@@ -1,0 +1,104 @@
+# The two suites and the coverage floor.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+#
+# Three jobs rather than one, because a red tick should name one thing: the
+# suite that needs nothing, the suite that needs a database, and the floor.
+#
+# The toolchain version appears nowhere here. rustup applies
+# /rust-toolchain.toml inside the checkout, which is also what installs the
+# llvm-tools component the coverage job reads.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: no job writes anything back.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Run the unit suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the unit suite
+        # No database service on this job, and that is the point rather than an
+        # omission: if a test in the default suite ever starts needing one, this
+        # job is where it goes red.
+        run: ./test
+
+  needs-a-database:
+    name: Run the suite that needs a database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # The major version docs/decisions/0001-means.md states as the floor,
+        # pinned by digest rather than by tag so that the suite is judged against
+        # the same image every time and a tag moving under it is not mistaken for
+        # a change in this repository.
+        image: postgres:17@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+        env:
+          # A throwaway instance that exists for the length of this job and is
+          # reachable only from it, which is why the credentials are in the file
+          # rather than in a secret. A secret here would imply this database is
+          # worth protecting, and the next person would wonder what is in it.
+          POSTGRES_USER: kontor
+          POSTGRES_PASSWORD: kontor
+          POSTGRES_DB: kontor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kontor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the suite that needs a database
+        env:
+          KONTOR_TEST_DATABASE_URL: postgres://kontor:kontor@127.0.0.1:5432/kontor
+        run: ./test-needs-a-database
+
+  coverage:
+    name: Hold the coverage floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-llvm-cov
+        # The one tool in this tree that does not ship with the toolchain. The
+        # action fetches a prebuilt binary at a pinned version rather than
+        # compiling it, and it is pinned by commit like every other action here.
+        uses: taiki-e/install-action@91ddec75689c4c78665b598d188dc821c5a43e5c # v2.85.9
+        with:
+          tool: cargo-llvm-cov@0.8.7
+
+      - name: Measure the unit suite and refuse below the floor
+        # The floor and the measurement it came from are in ./coverage, so
+        # raising or lowering it is a change to a tracked file with a reason
+        # beside it rather than a number edited in a workflow.
+        run: ./coverage

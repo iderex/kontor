@@ -8,7 +8,13 @@
 # different verdict than the workflow, which is the failure this file exists to
 # prevent. The floor is the 1.97 stable series, recorded in
 # docs/decisions/0001-means.md, and raising it is a change to that record.
+# The components are the tools a gate in this tree runs, so that rustup installs
+# them here rather than each workflow job asking for them separately and drifting
+# apart. rustfmt and clippy are the formatter and the linter ./format and ./lint
+# run. llvm-tools carries the coverage instrumentation reader ./coverage needs,
+# and it is here rather than in that script's own step because a component
+# installed by one job is a component the next job does not have.
 [toolchain]
 channel = "1.97.1"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "llvm-tools"]
 profile = "minimal"
