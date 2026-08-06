@@ -113,8 +113,9 @@ The cost of requiring a check is what it blocks, and the list is short because
 these checks are cheap and refuse narrow things.
 
 `Build both layers` blocks a merge that does not compile in either language.
-There is no case for merging one, and the cost is the twenty to forty seconds
-below.
+There is no case for merging one, and what it costs to run is the twenty odd
+seconds measured below. What it costs to wait for is a different number and the
+section below separates the two.
 
 The three client type contexts block, in order, a workspace that does not type
 check, a change that loosened a compiler setting the proof depends on, and an
@@ -161,30 +162,60 @@ Bounded is measurable and is measured below. Unambiguous is a judgement about
 each check's failure message. Deterministic is the test that turns out to be
 interesting, and one of the twelve does not pass it cleanly.
 
-Duration, over every completed run the repository holds:
+Bounded turns out to be two numbers rather than one, and reading only the first
+of them is how this section would have got the answer wrong. What a check costs
+to run is one number. How long a merge waits for its verdict is another, and
+they are not close.
+
+What the checks cost, read off the same commit as the names above, from each
+check run's own start and finish rather than from its workflow run's:
+
+    gh api "repos/iderex/kontor/commits/b4dab90ff3336ab6215af96fd8a528bcf618ed25/check-runs?per_page=100" \
+      --jq '.check_runs[] | select(.status=="completed") | [.name, .started_at, .completed_at] | @tsv'
+
+Twenty one completed check runs, because nine of the names on that commit were
+produced twice and the section after this one is about that duplication. Every
+one of them finished between two and twenty four seconds. The longest is the
+regeneration of the generated files at twenty four, with the build and the
+workflow audit next at twenty three, and those are the three that install
+something before they can start. The shortest are the text scans, which install
+nothing and finish in three to eight. Nothing in this set is slow to run.
+
+That is not what a merge waits for. A workflow run's own timestamps include the
+time it spends queued before a runner takes it, and the run level figure is
+therefore execution plus queue rather than execution:
+
+    gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100&status=completed" \
+      --jq '.workflow_runs[] | [.created_at, .updated_at, .name] | @tsv'
+
+Read as this was written, the six longest completed runs each span between five
+hours fifty six minutes and six hours seven minutes from creation to last
+update, for check runs that execute in under half a minute. Twenty nine further
+runs had been created and had not started at all, and one was in flight, out of
+one hundred and ninety three the repository holds:
 
     gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100" \
-      --jq '.workflow_runs[] | [.name, .conclusion, .run_started_at, .updated_at] | @tsv'
+      --jq '.workflow_runs[].status' | sort | uniq -c
+    163 completed
+      1 in_progress
+     29 queued
 
-    DCO                                n=11 min=7s  median=10s max=17s
-    Dependency review                  n=11 min=9s  median=13s max=28s
-    Scorecard supply-chain security    n=12 min=31s median=41s max=52s
-    Workflow Security Analysis         n=23 min=19s median=26s max=39s
-    build                              n=19 min=20s median=26s max=40s
-    client-types                       n=16 min=10s median=22s max=25s
-    text-determinism                   n=22 min=7s  median=22s max=35s
-    unicode-guard                      n=36 min=7s  median=10s max=30s
+A required context does not hold a merge for the twenty four seconds it runs. It
+holds the merge until its verdict arrives, and on the evidence above the arrival
+time is set by the runner queue rather than by anything in this repository.
 
-Nothing here is slow. The slowest completed run of any workflow that runs on a
-pull request is forty seconds, and on the commit read above the first check
-started at 14:54:41 and the last finished at 14:55:14, which is thirty three
-seconds for the whole set, because the jobs run beside each other rather than
-after each other.
+That is not an argument for making any of these advisory. An advisory check on
+the same queue reports just as late; it stops mattering, which is a different
+property from being fast. It is an argument for reading the queue before the
+request is applied rather than after, because the twenty four seconds is the
+number somebody will quote and it is not the number that will be felt. Whoever
+adds the first context should run the second command above first, and the
+procedure at the end of this document is where that belongs.
 
-Flakiness is the question this measurement cannot answer, and saying so is more
+Flakiness is the question no measurement here can answer, and saying so is more
 useful than a reassuring sentence. The same call grouped by conclusion returns
-no failed run of any workflow, over one hundred and ninety three runs of which
-one hundred and fifty had finished and forty three had not when it was read. A
+no failed run of any workflow, one hundred and sixty three successes and no
+other conclusion, against the thirty runs above that have not reached one. A
 history with no red in it tells you nothing about how a check behaves when it
 goes red, and it cannot distinguish a check that never fails from one that has
 not yet been given the chance.
