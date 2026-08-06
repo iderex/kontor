@@ -1,0 +1,9 @@
+{
+  "//": "The neighbour that must pass, judged under the same shipped configuration as tsconfig.fixture-red.json and differing from it only in which file it names.",
+  "extends": "./tsconfig.check.json",
+  "compilerOptions": {
+    "rootDir": "fixtures"
+  },
+  "include": [],
+  "files": ["fixtures/checked-index.ts"]
+}

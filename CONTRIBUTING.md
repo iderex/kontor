@@ -38,8 +38,25 @@ the way to ask the question on its own.
 An escape from the type system is allowed in client source and an unjustified
 one is not. Write the reason on the same line as the escape, as `reason:`
 followed by the reason, so that moving the escape moves its justification with
-it. A check refuses a line that escapes and carries no reason, and it refuses an
-empty `reason:` as if it were absent.
+it. The check is a script rather than a block inside a workflow, so you can run
+it before pushing and see the same verdict:
+
+    client/escape-scan
+
+It refuses a line that escapes and carries no reason, and it refuses an empty
+`reason:` as if it were absent.
+
+Both of those gates are only worth what their evidence is worth, so the evidence
+is a command too:
+
+    client/prove-gates
+
+Every leg runs a shipped command against a fixture and reads the exit code. A
+type error is refused, the same fixture passes with that one setting switched
+off, its corrected neighbour passes, an unreasoned escape is refused, an empty
+reason is refused as an absent one, and a reasoned escape is accepted. Loosen a
+setting where it lives and the leg that depended on it goes red, which is the
+whole reason the legs do not restate any rule of their own.
 
 What `./build` does not do is run a formatter, a lint gate or a test suite,
 because none of those exist yet. #3 adds formatting and lint, #5 adds the test

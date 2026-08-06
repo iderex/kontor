@@ -1,0 +1,145 @@
+#!/bin/sh
+# The two client gates, shown to bite.
+#
+# A gate that has never refused anything is a claim, not a control, and the
+# cheapest way for one to stop working is for it to keep passing. Every leg here
+# runs the shipped command or the shipped script; none of them re-implements a
+# rule, so a rule that is loosened where it lives is loosened here too and the
+# leg that depended on it goes red.
+#
+# Run from anywhere:
+#
+#     client/prove-gates
+#
+# It needs the client workspace installed, which `npm ci --prefix client` does.
+#
+# POSIX sh, matching ./build, because the legs are exit codes from other
+# programs and nothing here needs a language that can do more than run one and
+# read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+
+tsc=client/node_modules/.bin/tsc
+if [ ! -x "$tsc" ]; then
+    echo "prove-gates: $tsc is not there. Run 'npm ci --prefix client' first." >&2
+    exit 1
+fi
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+# Expect a command to succeed.
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (exit $?, and it was supposed to pass)"
+    fi
+}
+
+# Expect a command to fail. A gate that cannot say no is the thing this script
+# exists to catch, so the message says which way round the leg was.
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+echo "prove-gates: the type gate"
+
+# The shipped run is green with both fixtures tracked. This is what says the red
+# fixture is isolated: tsconfig.json includes src alone, and a fixture that
+# leaked into the application's own project would turn every later run red for a
+# reason that has nothing to do with the change being made.
+expect_green "the workspace type check passes with the fixtures in the tree" \
+    npm run --silent typecheck --prefix client
+
+# The fixture is refused.
+expect_red "an unchecked index access is refused" \
+    "$tsc" -p client/packages/app/tsconfig.fixture-red.json
+
+# The same fixture, with the one property switched off on the command line and
+# everything else identical, is accepted. This is the leg that says the refusal
+# above belongs to noUncheckedIndexedAccess rather than to some other setting
+# that happens to reject the same file.
+expect_green "the same fixture passes with noUncheckedIndexedAccess off" \
+    "$tsc" -p client/packages/app/tsconfig.fixture-red.json --noUncheckedIndexedAccess false
+
+# The one-change neighbour passes, so the gate is not one that refuses
+# everything put in front of it.
+expect_green "the checked neighbour passes under the same configuration" \
+    "$tsc" -p client/packages/app/tsconfig.fixture-green.json
+
+echo "prove-gates: the escape scan"
+
+scan=$(pwd)/client/escape-scan
+
+# The escape fixtures are built here rather than committed, because a tracked
+# file carrying an unreasoned escape is exactly what the scan refuses: it would
+# redden the real run for the sake of proving that it can.
+#
+# Each case is a throwaway repository holding one client source file, because
+# the scan reads tracked files through git and nothing else.
+escape_case() {
+    what=$1
+    line=$2
+    expectation=$3
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/client/packages/app/src"
+    {
+        echo "export const parse = (input: unknown) => {"
+        echo "  $line"
+        echo "};"
+    } > "$tmp/client/packages/app/src/fixture.ts"
+    # core.autocrlf off, so the case is judged on the bytes written above
+    # whatever this machine's git is configured to do to them.
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    git -C "$tmp" add -A
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh -c "cd \"$tmp\" && sh \"$scan\""
+    else
+        expect_green "$what" sh -c "cd \"$tmp\" && sh \"$scan\""
+    fi
+
+    rm -rf "$tmp"
+}
+
+escape_case "an escape with no reason is refused" \
+    'return input as any;' red
+
+# The near miss. Somebody who has read the rule and typed the marker without
+# saying anything after it has satisfied the letter of it, and a scan that reads
+# only the marker would pass this line.
+escape_case "an escape whose reason is the empty string is refused" \
+    'return input as any; // reason:' red
+
+escape_case "an escape carrying a reason is accepted" \
+    'return input as any; // reason: the payload shape is decided by #26' green
+
+escape_case "source with no escape is accepted" \
+    'return String(input);' green
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-gates: a leg above did not do what it says. The gate it belongs to is not proven." >&2
+    exit 1
+fi
+
+echo "prove-gates: every leg did what it says."

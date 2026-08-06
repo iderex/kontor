@@ -50,28 +50,31 @@ jobs:
           persist-credentials: false
 
       - name: Reject an escape from the type system with no reason on its line
-        shell: bash
-        run: |
-          set -euo pipefail
-          # An escape is allowed. An escape nobody has to justify is not, because
-          # the next reader cannot tell a considered one from a shortcut. The
-          # reason goes on the same line as the escape, so moving the escape
-          # moves its justification with it.
-          escapes=':\s*any\b|\bas\s+any\b|<any[,>]|\bany\[\]|@ts-ignore|@ts-expect-error|@ts-nocheck'
-          rc=0
-          hits=$(git grep -n -P "$escapes" -- 'client/**/*.ts' 'client/**/*.tsx' 'client/**/*.mts' 'client/**/*.cts') || rc=$?
-          case "$rc" in
-            0) ;;
-            1) echo "No escape from the type system in client source."; exit 0 ;;
-            *) echo "::error::Scanner error (git grep exit $rc), failing closed."; exit 1 ;;
-          esac
-          # A reason is the marker followed by at least one non-space character.
-          # An empty 'reason:' is the same as none and is refused as one.
-          unreasoned=$(printf '%s\n' "$hits" | grep -vP 'reason:\s*\S' || true)
-          if [ -n "$unreasoned" ]; then
-            echo "$unreasoned"
-            echo "::error::Each line above escapes the type system with no reason on it. Add 'reason: <why>' to the same line, or remove the escape."
-            exit 1
-          fi
-          echo "Every escape from the type system carries a reason:"
-          printf '%s\n' "$hits"
+        # The rule lives in the script, which a contributor can run before
+        # pushing and which the proof below runs as well, so there is one
+        # statement of it rather than one here and one somewhere else.
+        run: client/escape-scan
+
+  proof:
+    name: Prove the client type gates bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control, and the cheapest way for one to stop working is for it to go
+        # on passing. Each leg runs the shipped command against a fixture and
+        # reads the exit code, so loosening a rule where it lives reddens the
+        # leg that depended on it.
+        run: client/prove-gates

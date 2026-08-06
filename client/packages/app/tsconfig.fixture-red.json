@@ -1,0 +1,9 @@
+{
+  "//": "The fixture that must fail, judged under the shipped configuration. It extends tsconfig.check.json rather than restating any setting, so a setting that is loosened there is loosened here and the proof moves with it. include is emptied because the base includes src, and this project is about one file.",
+  "extends": "./tsconfig.check.json",
+  "compilerOptions": {
+    "rootDir": "fixtures"
+  },
+  "include": [],
+  "files": ["fixtures/unchecked-index.ts"]
+}

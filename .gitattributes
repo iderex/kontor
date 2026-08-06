@@ -40,3 +40,10 @@
 /LICENSE text eol=lf
 /build   text eol=lf
 /.nvmrc  text eol=lf
+
+# The client layer's two scripts, declared for the same reason as /build: a
+# carriage return in a shell script is not cosmetic, it reaches the interpreter
+# as part of the last word on the line. Anchored to their directory so a later
+# file of either name elsewhere does not inherit a rule aimed at these.
+/client/escape-scan text eol=lf
+/client/prove-gates text eol=lf
