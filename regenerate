@@ -1,0 +1,75 @@
+#!/bin/sh
+# Every generated file that is committed, remade from what generates it.
+#
+#     regenerate            remake them
+#     regenerate --check    remake them and refuse a difference
+#
+# A generated file that is committed and cannot be remade on demand becomes a
+# file people edit by hand while believing it is generated, and the edit
+# survives because nothing ever writes over it. The register below is the whole
+# set, one entry per file, and --check is what stops the register from quietly
+# going out of date: a hand edit that reaches the index is overwritten here and
+# the difference is what fails.
+#
+# What the tree holds today is two lock files and nothing else. Neither is a
+# convenience. A lock file is the resolution a build is reproducible from, and a
+# hand edit to one is a build nobody can reproduce.
+#
+#     server/Cargo.lock, from server/Cargo.toml and the crate manifests under
+#     server/crates/, remade by cargo. It carries its generator in its own first
+#     two lines, which cargo writes.
+#
+#     client/package-lock.json, from client/package.json and the package
+#     manifests under client/packages/, remade by npm. It carries no such
+#     header and cannot: the format is JSON, which has no comment, and npm
+#     rewrites the file from its own model on every run, so an added key does
+#     not survive. This register and --check are what name its generator
+#     instead.
+#
+# Both verbs write the file from its manifests and leave a resolution that is
+# already satisfied alone, so running this does not silently take a newer
+# dependency than the one the tree agreed on. Updating a dependency is a
+# different verb and a different change, and it belongs with the issue that
+# argues for the update.
+#
+# POSIX sh, matching ./build, and for the same reason: this is the toolchains'
+# own verbs run in order, and the thing that must not be added here is a
+# generator of its own.
+#
+# prove-determinism is what shows --check bites.
+set -eu
+
+check=no
+if [ "${1-}" = "--check" ]; then
+    check=yes
+    shift
+fi
+
+cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
+
+# The register, in one place, so the loop below and the refusal at the end
+# cannot come to hold different sets.
+generated="server/Cargo.lock client/package-lock.json"
+
+command -v cargo >/dev/null 2>&1 || { echo "regenerate: cargo is not on the path. CONTRIBUTING.md says what to install." >&2; exit 1; }
+command -v npm >/dev/null 2>&1 || { echo "regenerate: npm is not on the path. CONTRIBUTING.md says what to install." >&2; exit 1; }
+
+echo "regenerate: server/Cargo.lock"
+cargo metadata --format-version 1 --manifest-path server/Cargo.toml >/dev/null
+
+echo "regenerate: client/package-lock.json"
+npm install --package-lock-only --ignore-scripts --silent --prefix client >/dev/null
+
+if [ "$check" = no ]; then
+    echo "regenerate: done. 'git diff' says whether anything moved."
+    exit 0
+fi
+
+# shellcheck disable=SC2086
+if git diff --exit-code --stat -- $generated; then
+    echo "regenerate: every generated file is what its generator writes."
+    exit 0
+fi
+
+echo "regenerate: the files above are not what their generator writes. Something edited a generated file by hand, or a manifest changed without this being run. Run 'regenerate' and commit the result." >&2
+exit 1

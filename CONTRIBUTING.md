@@ -58,6 +58,28 @@ reason is refused as an absent one, and a reasoned escape is accepted. Loosen a
 setting where it lives and the leg that depended on it goes red, which is the
 whole reason the legs do not restate any rule of their own.
 
+Line endings, encoding and the generated files have three commands of their own,
+and they read what git holds rather than what is in your working tree, because a
+clone with `core.autocrlf` set has a working tree that differs from the index by
+line ending and only one of the two is what anybody else will check out:
+
+    ./text-scan
+    ./regenerate --check
+    ./prove-determinism
+
+The first refuses a carriage return in tracked text and anything that is not
+UTF-8 without a byte order mark. The second remakes every generated file that is
+committed and refuses a difference, so a hand edit to one fails rather than
+surviving; the register of which files those are is the comment at the top of
+`regenerate`, and `./regenerate` on its own remakes them without judging. The
+third is the evidence that all three refusals work, against fixtures it builds
+rather than against this tree.
+
+Adding a binary file means declaring it in `.gitattributes` with git's `binary`
+macro. Nothing is exempt from the encoding rule by detection, which is
+deliberate: a detector reading a mangled file as binary would exempt exactly the
+file the rule exists for.
+
 What `./build` does not do is run a formatter, a lint gate or a test suite,
 because none of those exist yet. #3 adds formatting and lint, #5 adds the test
 harness and the coverage floor, and #6 puts them all on the pull request under

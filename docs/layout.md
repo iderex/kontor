@@ -88,11 +88,21 @@ its own, so it is not the third party build system that record refuses. It also
 refuses a toolchain that does not match the pins, which is the only thing
 standing between `.nvmrc` and a build that quietly used a different Node.
 
+`text-scan`, `regenerate` and `prove-determinism` sit beside it at the root, for
+the reason the top of this note gives: a contributor runs them, and a rule
+stated inside a `run:` block is a rule nobody can run before pushing. The first
+refuses a carriage return and anything that is not UTF-8 in tracked text,
+reading the index rather than the working tree. The second remakes every
+generated file that is committed, and its comment header is the register of
+which files those are; `regenerate --check` remakes them and refuses a
+difference, which is what stops a hand edit to one from surviving. The third
+proves all three rules bite, against fixtures it builds rather than against the
+tree it lives in.
+
 `client/escape-scan` and `client/prove-gates` are the same kind of thing one
-layer down, and they sit beside the workspace they judge rather than in
-`.github/`, for the reason the top of this note gives: a contributor runs them,
-and a rule stated inside a `run:` block is a rule nobody can run before pushing.
-The first refuses an escape from the client type system that carries no reason.
+layer down, and they sit beside the workspace they judge rather than at the
+root. The first refuses an escape from the client type system that carries no
+reason.
 The second is what says both client gates still bite, by running the shipped
 commands against fixtures and reading the exit codes, so a setting loosened
 where it lives reddens the leg that depended on it rather than passing quietly.

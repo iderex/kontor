@@ -1,0 +1,183 @@
+#!/bin/sh
+# The three determinism gates, shown to bite.
+#
+#     prove-determinism
+#
+# Each leg builds a fixture, runs the shipped script against it and reads the
+# exit code. No leg restates a rule, so a rule loosened where it lives reddens
+# the leg that depended on it rather than passing quietly.
+#
+# Every text fixture is a throwaway repository holding one file, because both
+# text rules read the index and nothing else. core.autocrlf is off in each one,
+# so a case is judged on the bytes written here whatever this machine's git is
+# configured to do to them, and the fixtures are written with printf and octal
+# escapes because the bytes are the point and an editor would normalise them.
+#
+# POSIX sh, matching the scripts it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass)"
+    fi
+}
+
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+# A repository holding one file, plus whatever .gitattributes the case needs.
+# The file is written by the caller through a function so the bytes stay
+# visible at the call site.
+text_case() {
+    what=$1
+    rule=$2
+    expectation=$3
+    writer=$4
+    attributes=${5-}
+
+    tmp=$(mktemp -d)
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    "$writer" "$tmp/subject.txt"
+    if [ -n "$attributes" ]; then
+        printf '%s\n' "$attributes" > "$tmp/.gitattributes"
+    fi
+    git -C "$tmp" add -A
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh -c "cd \"$tmp\" && sh \"$root/text-scan\" $rule \"$tmp\""
+    else
+        expect_green "$what" sh -c "cd \"$tmp\" && sh \"$root/text-scan\" $rule \"$tmp\""
+    fi
+
+    rm -rf "$tmp"
+}
+
+write_crlf()    { printf 'one\r\ntwo\r\n'          > "$1"; }
+write_lf()      { printf 'one\ntwo\n'              > "$1"; }
+write_latin1()  { printf 'caf\351 for one\n'       > "$1"; }
+write_utf8()    { printf 'caf\303\251 for one\n'   > "$1"; }
+write_bom()     { printf '\357\273\277one\n'       > "$1"; }
+
+echo "prove-determinism: line endings"
+
+text_case "a carriage return in tracked text is refused" \
+    line-endings red write_crlf
+
+# The one-change neighbour. Without it the leg above is also satisfied by a
+# scanner that refuses every file it is given.
+text_case "the same file with LF endings is accepted" \
+    line-endings green write_lf
+
+# Inside a file declared binary a carriage return is a byte rather than a line
+# ending, and the scanner skips it. This is the leg that says so out loud,
+# because the skip is the part somebody will later mistake for cover. The
+# declaration is git's own `binary` macro, which is the only spelling both
+# rules here agree on: it unsets `text`, which is what the encoding rule reads,
+# and `diff`, which is what makes the line ending rule pass the file over.
+text_case "a carriage return in a file declared binary is accepted" \
+    line-endings green write_crlf 'subject.txt binary'
+
+echo "prove-determinism: encoding"
+
+# The near miss. A file that is one byte away from UTF-8 opens in most editors,
+# renders almost correctly, and is exactly what the rule exists for. Detection
+# would read it as text and let it through on that basis.
+text_case "a file that is not valid UTF-8 is refused" \
+    encoding red write_latin1
+
+text_case "the same characters encoded as UTF-8 are accepted" \
+    encoding green write_utf8
+
+text_case "a byte order mark is refused" \
+    encoding red write_bom
+
+text_case "the same file without one is accepted" \
+    encoding green write_lf
+
+# The other half of the escape hatch. Bytes that are not UTF-8 are what a real
+# binary file is made of, and declaring one is how it gets past this rule. A
+# file that is merely detected as binary does not get past it, which is the
+# decision the scanner's own comment argues for.
+text_case "bytes that are not UTF-8 in a file declared binary are accepted" \
+    encoding green write_latin1 'subject.txt binary'
+
+echo "prove-determinism: generated files"
+
+# A copy of the tracked tree, so the fixture can commit a hand edit without one
+# reaching this repository. Only tracked paths are copied, which leaves the
+# build output and the fetched dependencies behind; npm and cargo need neither
+# to write a lock file.
+generated_case() {
+    what=$1
+    expectation=$2
+    editor=$3
+
+    tmp=$(mktemp -d)
+    git ls-files -z -- client server | tar --null -T - -cf - | (cd "$tmp" && tar -xf -)
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    if [ -n "$editor" ]; then
+        "$editor" "$tmp"
+    fi
+    # The edit goes into the index, because that is where a hand edit lives by
+    # the time anybody else can be hurt by it. An edit left in the working tree
+    # is overwritten by the regeneration and leaves nothing to refuse, which is
+    # the failure this leg would otherwise pretend to catch.
+    git -C "$tmp" add -A
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh "$root/regenerate" --check "$tmp"
+    else
+        expect_green "$what" sh "$root/regenerate" --check "$tmp"
+    fi
+
+    rm -rf "$tmp"
+}
+
+edit_cargo_lock() {
+    sed -i 's/^name = "kontor-store"$/name = "kontor-stores"/' "$1/server/Cargo.lock"
+}
+
+edit_package_lock() {
+    sed -i 's/"typescript": "7\.0\.2"/"typescript": "7.0.1"/' "$1/client/package-lock.json"
+}
+
+generated_case "a hand edit to server/Cargo.lock is refused" \
+    red edit_cargo_lock
+
+generated_case "a hand edit to client/package-lock.json is refused" \
+    red edit_package_lock
+
+# The neighbour, and the leg that says the two above are about the edit rather
+# than about regeneration moving something on its own.
+generated_case "the tracked tree regenerates to itself" \
+    green ""
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-determinism: a leg above did not do what it says. The gate it belongs to is not proven." >&2
+    exit 1
+fi
+
+echo "prove-determinism: every leg did what it says."

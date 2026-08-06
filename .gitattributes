@@ -41,9 +41,20 @@
 /build   text eol=lf
 /.nvmrc  text eol=lf
 
-# The client layer's two scripts, declared for the same reason as /build: a
-# carriage return in a shell script is not cosmetic, it reaches the interpreter
-# as part of the last word on the line. Anchored to their directory so a later
-# file of either name elsewhere does not inherit a rule aimed at these.
-/client/escape-scan text eol=lf
-/client/prove-gates text eol=lf
+# The other scripts, declared for the same reason as /build: a carriage return
+# in a shell script is not cosmetic, it reaches the interpreter as part of the
+# last word on the line. Each one is anchored to the directory it sits in, so a
+# later file of the same name elsewhere does not inherit a rule aimed at these.
+/client/escape-scan  text eol=lf
+/client/prove-gates  text eol=lf
+/text-scan           text eol=lf
+/regenerate          text eol=lf
+/prove-determinism   text eol=lf
+
+# When the first image or font arrives, declare it with git's own `binary`
+# macro rather than with `-text` alone. The macro unsets `text`, which the
+# encoding rule reads, and `diff`, which is what makes the line ending rule pass
+# the file over. Declaring only one of the two leaves the file judged by the
+# other rule, and the refusal that follows is a real one whose message points at
+# the wrong thing. There is no such file in the tree today, so this paragraph is
+# guidance and not a rule, which is why nothing below it declares one.
