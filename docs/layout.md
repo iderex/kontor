@@ -204,6 +204,7 @@ two are not confused:
 
     ls .github/workflows/
     build.yml
+    client-types.yml
     dco.yml
     dependency-review.yml
     scorecard.yml
@@ -213,8 +214,9 @@ two are not confused:
 
 Those judge sign off, dependency advisories, supply chain hygiene, line endings
 and encoding in tracked text, dangerous Unicode, the workflow files themselves,
-and whether both layers compile against the pinned toolchains. None of them
-reads a module boundary.
+whether both layers compile against the pinned toolchains, whether the client
+type checks under strict mode, and whether an escape from the client type system
+carries a reason. None of them reads a module boundary.
 
 The build one is the closest, and the distance is worth stating rather than
 blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to
