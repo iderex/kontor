@@ -48,6 +48,16 @@ somebody to discover from a merge that nobody reviewed.
 
 ## The contexts
 
+This document names names, where `CONTRIBUTING.md` and `docs/quality-parity.md`
+both deliberately refuse to, and the difference is worth stating rather than
+leaving a reader to notice it as an inconsistency. Those two describe what the
+repository has, and a description that lists drifts against the thing it
+describes. This one is a request for a set that does not exist yet, and a
+request that names nothing cannot be acted on or argued with. The list below is
+still derived rather than remembered: every name is printed by the command above
+it, at a named commit, and a reader who re-runs that command against a later
+commit gets the set as it is then rather than as it was here.
+
 A required check is matched by the name a run reports under, not by the name of
 the workflow or the job in the file, so the set has to be read off a commit that
 has actually been judged. On a commit reached through a pull request:
