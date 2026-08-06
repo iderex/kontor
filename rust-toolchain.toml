@@ -1,0 +1,14 @@
+# The Rust toolchain, pinned exactly. rustup reads this file on every cargo
+# invocation inside the repository and uses the version named here, so a
+# contributor and a workflow compile with the same compiler without either of
+# them having to say which one.
+#
+# An exact version rather than "stable" or "1.97". A channel is a moving target,
+# and a contributor who gets a different compiler than the workflow gets a
+# different verdict than the workflow, which is the failure this file exists to
+# prevent. The floor is the 1.97 stable series, recorded in
+# docs/decisions/0001-means.md, and raising it is a change to that record.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

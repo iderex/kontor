@@ -6,27 +6,50 @@ the guide says so instead of implying one.
 
 ## Before you push
 
-There is no single command in this clone that runs the gates. That is a gap and
-not an omission: the tree carries no application toolchain yet, so there is
-nothing local for a formatter, a lint gate or a test runner to be pointed at.
+    ./build
+
+That builds both layers from a fresh clone and is the same script the build
+workflow runs, so a verdict here and a verdict there come from one procedure
+rather than two.
+
+It needs three things installed first, and it refuses rather than working around
+any of them.
+
+`rustup`, not a Rust toolchain installed some other way. The exact compiler is
+pinned by `rust-toolchain.toml`, rustup is what applies that file, and a `cargo`
+that did not come from rustup builds with whatever version it happens to be.
+
+Node, at the version `.nvmrc` pins. Nothing applies that file on its own, so the
+script compares it against the `node` on your path and stops on a mismatch.
+`nvm use` in this directory is the usual way to satisfy it. Editing `.nvmrc` to
+match your machine is not, because the pin is the point.
+
+A POSIX shell. On Windows that is the one that ships with git.
+
+What the script does not do is run a formatter, a lint gate or a test suite,
+because none of those exist yet. #3 adds formatting and lint, #4 adds the client
+type gate, #5 adds the test harness and the coverage floor, and #6 puts them all
+on the pull request under stable names. Until they land, `./build` says the tree
+compiles and says nothing at all about whether it is correct.
+
+The tree it builds:
 
     git ls-tree --name-only HEAD
     .gitattributes
     .github
+    .gitignore
+    .nvmrc
     CONTRIBUTING.md
     DCO
     LICENSE
     NOTICE.md
     README.md
     SECURITY.md
+    build
+    client
     docs
-
-Until that changes, the pull request is the first place any verdict appears, and
-the gates that exist there run on a server rather than on your machine. #2 adds
-the workspaces and pins both toolchains, #3 adds the formatting and lint gate,
-#5 adds the test harness and the coverage floor, and #6 puts them on the pull
-request under stable names. When those land, the command belongs at the top of
-this section and this paragraph comes out.
+    rust-toolchain.toml
+    server
 
 ## What runs on a pull request
 

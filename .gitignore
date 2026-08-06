@@ -1,0 +1,7 @@
+# Build output and fetched dependencies. Nothing here is generated-and-committed;
+# the generated files rule of #8 is about the other kind, which this tree does
+# not carry yet.
+/server/target/
+node_modules/
+dist/
+*.tsbuildinfo

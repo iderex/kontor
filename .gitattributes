@@ -24,10 +24,19 @@
 # The text types in the tree today, declared rather than detected. text is not
 # text=auto here, because detection reading one of these as binary would silence
 # the rule for that file without saying so.
-*.md  text eol=lf
-*.yml text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.lock text eol=lf
+*.rs   text eol=lf
+*.ts   text eol=lf
 
-# The two tracked files with no extension, anchored to the root so a later file
-# of the same name somewhere else does not inherit a rule aimed at these.
+# The tracked files with no extension, anchored to the root so a later file of
+# the same name somewhere else does not inherit a rule aimed at these. /build is
+# a shell script, where a carriage return is not cosmetic: it reaches the
+# interpreter as part of the last word on the line.
 /DCO     text eol=lf
 /LICENSE text eol=lf
+/build   text eol=lf
+/.nvmrc  text eol=lf

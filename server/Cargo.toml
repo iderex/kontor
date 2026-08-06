@@ -1,0 +1,28 @@
+# The server workspace. The crates below are the modules docs/layout.md
+# describes, and the dependency edges between them are that note's rule that the
+# arrows all point one way, written where cargo can refuse a cycle rather than
+# only where a reader can notice one.
+#
+# What the workspace holds is printed rather than listed here:
+#
+#     cargo metadata --format-version 1 --no-deps --manifest-path server/Cargo.toml \
+#       | jq -r '.packages[].name'
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+# The floor from docs/decisions/0001-means.md. The exact compiler is pinned by
+# /rust-toolchain.toml; this field is the lower bound a consumer is told about,
+# and the two are different statements.
+rust-version = "1.97"
+license = "AGPL-3.0-only"
+repository = "https://github.com/iderex/kontor"
+publish = false
+
+[workspace.lints.rust]
+# Nothing in this server needs unsafe, and forbid rather than deny so a module
+# cannot re-allow it locally without changing this line.
+unsafe_code = "forbid"

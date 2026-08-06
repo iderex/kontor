@@ -1,0 +1,49 @@
+# One job running the same script a contributor runs, rather than a second
+# procedure that happens to build the same thing. Where the two differ, the
+# difference is the defect, and the only way to have no difference is to have no
+# second procedure.
+#
+# Neither toolchain version appears in this file. rustup applies
+# /rust-toolchain.toml on its own inside the checkout, setup-node is pointed at
+# /.nvmrc rather than at a number typed here, and ./build then refuses if what
+# ended up on the path is not what the tree pins.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job compiles and writes nothing back.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build both layers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. A number here would be a second pin that
+          # drifts against the first one silently.
+          node-version-file: .nvmrc
+
+      - name: Report the toolchains this runner resolved
+        run: |
+          node --version
+          rustc --version
+          cargo --version
+
+      - name: Build both layers
+        run: ./build
