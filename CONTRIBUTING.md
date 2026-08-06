@@ -26,11 +26,43 @@ match your machine is not, because the pin is the point.
 
 A POSIX shell. On Windows that is the one that ships with git.
 
-What the script does not do is run a formatter, a lint gate or a test suite,
-because none of those exist yet. #3 adds formatting and lint, #4 adds the client
-type gate, #5 adds the test harness and the coverage floor, and #6 puts them all
-on the pull request under stable names. Until they land, `./build` says the tree
-compiles and says nothing at all about whether it is correct.
+The client type gate is its own command, because a check that only runs as a
+side effect of building cannot be run without producing artefacts:
+
+    npm run typecheck --prefix client
+
+It emits nothing and it is the same command the client type workflow runs.
+Building already type checks, since `tsc` cannot emit without doing so; this is
+the way to ask the question on its own.
+
+An escape from the type system is allowed in client source and an unjustified
+one is not. Write the reason on the same line as the escape, as `reason:`
+followed by the reason, so that moving the escape moves its justification with
+it. The check is a script rather than a block inside a workflow, so you can run
+it before pushing and see the same verdict:
+
+    client/escape-scan
+
+It refuses a line that escapes and carries no reason, and it refuses an empty
+`reason:` as if it were absent.
+
+Both of those gates are only worth what their evidence is worth, so the evidence
+is a command too:
+
+    client/prove-gates
+
+Every leg runs a shipped command against a fixture and reads the exit code. A
+type error is refused, the same fixture passes with that one setting switched
+off, its corrected neighbour passes, an unreasoned escape is refused, an empty
+reason is refused as an absent one, and a reasoned escape is accepted. Loosen a
+setting where it lives and the leg that depended on it goes red, which is the
+whole reason the legs do not restate any rule of their own.
+
+What `./build` does not do is run a formatter, a lint gate or a test suite,
+because none of those exist yet. #3 adds formatting and lint, #5 adds the test
+harness and the coverage floor, and #6 puts them all on the pull request under
+stable names. Until they land, `./build` says the tree compiles and says nothing
+about whether it is correct.
 
 The tree it builds:
 

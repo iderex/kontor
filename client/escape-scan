@@ -1,0 +1,63 @@
+#!/bin/sh
+# An escape from the client type system is allowed. An escape nobody has to
+# justify is not, because a later reader cannot tell a considered one from a
+# shortcut taken at the end of an afternoon. The reason goes on the same line as
+# the escape, so moving the escape moves its justification with it.
+#
+# Run from the repository root:
+#
+#     client/escape-scan
+#
+# It reads tracked client sources through git rather than the working tree, so
+# build output and fetched dependencies cannot be scanned by accident and a file
+# nobody committed cannot introduce a verdict.
+#
+# POSIX sh, which the tree already carries in ./build, rather than a linter
+# plugin: the rule is about the text of a line and needs no parse of the
+# program, and a plugin would add a dependency and a configuration file for it.
+#
+# client/prove-gates is what shows this file bites, and it runs this file rather
+# than a copy of its rules.
+set -eu
+
+# The escapes. Each one turns a checked expression into an unchecked one, and
+# each one is legitimate somewhere, which is why the rule asks for a reason
+# rather than refusing them outright.
+escapes=':\s*any\b|\bas\s+any\b|<any[,>]|\bany\[\]|@ts-ignore|@ts-expect-error|@ts-nocheck'
+
+# git grep: 0 = found, 1 = nothing found, 2 or above = the scanner itself
+# failed. The exit code is captured so `set -e` does not abort on the clean
+# exit 1, and anything above 1 fails closed rather than being read as a clean
+# tree.
+rc=0
+hits=$(git grep -n -P "$escapes" -- \
+    ':(glob)client/**/*.ts' \
+    ':(glob)client/**/*.tsx' \
+    ':(glob)client/**/*.mts' \
+    ':(glob)client/**/*.cts') || rc=$?
+
+case "$rc" in
+    0) ;;
+    1)
+        echo "escape-scan: no escape from the type system in tracked client source."
+        exit 0
+        ;;
+    *)
+        echo "escape-scan: git grep exited $rc. Failing closed rather than reading a broken scanner as a clean tree." >&2
+        exit 1
+        ;;
+esac
+
+# A reason is the marker followed by at least one non-space character. An empty
+# `reason:` is refused as if it were absent, because a marker that is satisfied
+# by typing the marker is not a rule.
+unreasoned=$(printf '%s\n' "$hits" | grep -v -P 'reason:\s*\S' || true)
+
+if [ -n "$unreasoned" ]; then
+    printf '%s\n' "$unreasoned" >&2
+    echo "escape-scan: each line above escapes the type system and carries no reason. Put 'reason: <why>' on the same line, or remove the escape." >&2
+    exit 1
+fi
+
+echo "escape-scan: every escape from the type system carries a reason:"
+printf '%s\n' "$hits"

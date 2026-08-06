@@ -88,6 +88,18 @@ its own, so it is not the third party build system that record refuses. It also
 refuses a toolchain that does not match the pins, which is the only thing
 standing between `.nvmrc` and a build that quietly used a different Node.
 
+`client/escape-scan` and `client/prove-gates` are the same kind of thing one
+layer down, and they sit beside the workspace they judge rather than in
+`.github/`, for the reason the top of this note gives: a contributor runs them,
+and a rule stated inside a `run:` block is a rule nobody can run before pushing.
+The first refuses an escape from the client type system that carries no reason.
+The second is what says both client gates still bite, by running the shipped
+commands against fixtures and reading the exit codes, so a setting loosened
+where it lives reddens the leg that depended on it rather than passing quietly.
+The fixtures it judges sit in `client/packages/app/fixtures/`, which is outside
+the `src` that `tsconfig.json` includes, so the file that is meant to be red
+cannot redden the application's own build.
+
 ## The direction dependencies run inside the server
 
 The server modules form a stack, and the whole point of the stack is that the
@@ -204,6 +216,7 @@ two are not confused:
 
     ls .github/workflows/
     build.yml
+    client-types.yml
     dco.yml
     dependency-review.yml
     scorecard.yml
@@ -213,8 +226,9 @@ two are not confused:
 
 Those judge sign off, dependency advisories, supply chain hygiene, line endings
 and encoding in tracked text, dangerous Unicode, the workflow files themselves,
-and whether both layers compile against the pinned toolchains. None of them
-reads a module boundary.
+whether both layers compile against the pinned toolchains, whether the client
+type checks under strict mode, and whether an escape from the client type system
+carries a reason. None of them reads a module boundary.
 
 The build one is the closest, and the distance is worth stating rather than
 blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to

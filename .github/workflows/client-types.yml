@@ -1,0 +1,80 @@
+# The server language checks types as a condition of compiling. The client
+# language does not unless something makes it, and types that exist in the
+# editor and not in the build read as cover that is not there.
+name: client-types
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Type check the client workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version.
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Type check every package in the workspace
+        # Its own command rather than a side effect of building, and it emits
+        # nothing, so a green run cannot be confused with an artefact that
+        # happened to compile.
+        run: npm run typecheck --prefix client
+
+  escapes:
+    name: Reject an unreasoned escape from the type system
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject an escape from the type system with no reason on its line
+        # The rule lives in the script, which a contributor can run before
+        # pushing and which the proof below runs as well, so there is one
+        # statement of it rather than one here and one somewhere else.
+        run: client/escape-scan
+
+  proof:
+    name: Prove the client type gates bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the client workspace from the lock file
+        run: npm ci --prefix client
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control, and the cheapest way for one to stop working is for it to go
+        # on passing. Each leg runs the shipped command against a fixture and
+        # reads the exit code, so loosening a rule where it lives reddens the
+        # leg that depended on it.
+        run: client/prove-gates
