@@ -1,0 +1,76 @@
+# No `labels:` key. See config.yml for why.
+name: Work, a defect, or an undecided question
+description: "For anything about the tree itself: what is broken, what is missing, or what has not been decided."
+title: "<what is wrong, in one line>"
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        This form asks for the same three things every issue on this tracker
+        already states, so a later issue can be read alongside an earlier one
+        without either of them having to be read twice. Nothing here is checked
+        by a machine. The form is a shape to fall into, not a gate.
+
+
+        If you think you have found a vulnerability, close this and use the
+        private route in SECURITY.md instead. The tracker is public and an issue
+        is the disclosure rather than the report of one.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong
+      description: >-
+        Not what to build. What is broken, missing or undecided, so that a
+        reader can disagree with the problem before arguing about the fix. An
+        issue that opens with the fix hides the question of whether the fix is
+        the right one.
+      placeholder: >-
+        The workflow files are pinned to moving tags, so the same commit can be
+        judged by different code on two runs and neither run says which it used.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: The evidence
+      description: >-
+        What makes the problem checkable by somebody who does not already
+        believe you. Where the evidence is a number, paste the command that
+        produced it together with its output, run against a reference the reader
+        will have rather than against your working tree. A number without its
+        command cannot be checked and cannot be seen to have moved.
+      placeholder: |
+        git grep -c 'uses: .*@v[0-9]' -- .github/workflows/
+        .github/workflows/example.yml:3
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: >-
+        What has to be true for this to close, in terms somebody other than you
+        can verify. Where a condition is a matter of taste, it is not a done
+        condition and the issue has not stated one. Where a condition is a
+        guard, say what proves the guard bites, because a guard that has never
+        refused anything is not known to work.
+      placeholder: |
+        - Every action reference is a commit hash with the version in a trailing comment.
+        - A check refuses a moving tag, and a fixture proves it refuses one.
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Scope
+      description: >-
+        The paths this issue expects to change, if you know them. Nothing in
+        this repository reads this field today, so it is a note to a reader and
+        not a boundary anything enforces.
+      placeholder: .github/workflows/, docs/
+    validations:
+      required: false

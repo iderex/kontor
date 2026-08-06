@@ -17,6 +17,7 @@ nothing local for a formatter, a lint gate or a test runner to be pointed at.
     LICENSE
     NOTICE.md
     README.md
+    SECURITY.md
     docs
 
 Until that changes, the pull request is the first place any verdict appears, and
