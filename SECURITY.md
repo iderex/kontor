@@ -61,19 +61,27 @@ there is to test:
     git ls-tree --name-only HEAD
     .gitattributes
     .github
+    .gitignore
+    .nvmrc
     CONTRIBUTING.md
     DCO
     LICENSE
     NOTICE.md
     README.md
     SECURITY.md
+    build
+    client
     docs
+    rust-toolchain.toml
+    server
 
-There is no server, no client, no database and no connector in the tree yet, so
-most of the surface this policy will eventually cover does not exist to be
-attacked. What does exist is the workflow files and the documents. A finding
-against a workflow, such as a way to make one run attacker-controlled code or
-leak its token, is in scope now.
+`server/` and `client/` hold workspaces that compile and do nothing else. There
+is no request path, no database, no authentication and no connector, so most of
+the surface this policy will eventually cover does not exist to be attacked.
+What does exist is the workflow files, the build script, the two dependency
+trees the lock files pin, and the documents. A finding against any of those, such
+as a way to make a workflow run attacker-controlled code or leak its token, is in
+scope now.
 
 ## What is out of scope
 

@@ -11,18 +11,25 @@ tree holds today is smaller, and reading it is one command:
     git ls-tree --name-only HEAD
     .gitattributes
     .github
+    .gitignore
+    .nvmrc
     CONTRIBUTING.md
     DCO
     LICENSE
     NOTICE.md
     README.md
     SECURITY.md
+    build
+    client
     docs
+    rust-toolchain.toml
+    server
 
-So most of what follows names a directory that does not exist yet. That is
-deliberate: #2 builds the skeleton against this note, and where the skeleton and
-this note disagree, one of the two is corrected in the change that creates the
-disagreement rather than later.
+`server/` and `client/` are there since #2, holding workspaces that compile and
+nothing more. `mobile/`, `tests/`, `benchmarks/` and `fuzz/` are still names in
+this note rather than directories, so part of what follows describes a shape the
+tree is being built towards. Where the tree and this note disagree, one of the
+two is corrected in the change that creates the disagreement rather than later.
 
 ## The top level
 
@@ -62,9 +69,24 @@ machine it was measured on, because a number without one is not a budget.
 from strangers: the import parser, the API request path, the expression language
 and the sync protocol decoder.
 
-The toolchain manifests and their lock files sit at the top level, where the
-tools expect them. #2 decides which files those are and pins both toolchains
-exactly.
+The two toolchain pins sit at the repository root, because that is where the
+tools that read them look: `rust-toolchain.toml`, which rustup applies to every
+cargo invocation inside the tree, and `.nvmrc`, which nothing applies on its own.
+Each workspace's own manifest and lock file sit at the root of that workspace
+rather than at the root of the repository, which is `server/Cargo.toml` with
+`server/Cargo.lock` and `client/package.json` with `client/package-lock.json`.
+The pins are one repository-wide fact; the manifests are two workspaces that
+happen to live in one tree.
+
+`build` at the root is the one command that takes a fresh clone to a compiled
+tree, and the build workflow runs that script rather than restating its steps.
+It is POSIX shell, which `docs/decisions/0001-means.md` allows as a dependency
+that is argued where it is added rather than as a second language, and the
+argument is that a build driver cannot be written in the toolchain it exists to
+invoke. It runs the toolchains' own verbs in order and adds no build rules of
+its own, so it is not the third party build system that record refuses. It also
+refuses a toolchain that does not match the pins, which is the only thing
+standing between `.nvmrc` and a build that quietly used a different Node.
 
 ## The direction dependencies run inside the server
 
@@ -141,22 +163,34 @@ of the server through the same write path everything else uses.
 This note does not list them, because a list in a document drifts against the
 thing it describes and the drift is invisible until somebody trusts the list.
 
-    cargo metadata --format-version 1 --no-deps --manifest-path server/Cargo.toml \
-      | jq -r '.packages[].name'
+    cargo tree --manifest-path server/Cargo.toml --workspace --depth 0
 
-    npm query .workspace --prefix client | jq -r '.[].name'
+    npm ls --workspaces --depth 0 --prefix client
 
-Neither command returns anything today, because neither workspace exists yet.
-That is the same fact the `git ls-tree` output at the top of this note shows, and
-it stays true until #2 lands. The commands are named here rather than their
-output, so that this note keeps working when the output changes.
+Neither needs a tool beyond the two toolchains a contributor already has to have
+installed, which is why they are these commands rather than a `cargo metadata`
+or `npm query` pipeline through a JSON filter this tree does not require anyone
+to have.
+
+The same tool prints the direction the dependencies run, which is the rule the
+next section is about, and prints it out of the compiled graph rather than out
+of anybody's memory:
+
+    cargo tree --manifest-path server/Cargo.toml --package kontor
+
+The commands are named here rather than their output, so that this note keeps
+working when the output changes.
 
 ## What is enforced and what is only written down
 
-Nothing in this note is enforced by a check today. The distinction below is the
-honest one rather than the flattering one.
+Almost nothing in this note is enforced by a check today. The distinction below
+is the honest one rather than the flattering one.
 
-Enforced by a check: nothing.
+Enforced by a check: that the crates named in `server/Cargo.toml` and the
+packages named in `client/package.json` compile, which the build workflow
+refuses a breach of, and with it that no cycle exists among the server crates,
+which cargo refuses on its own. Neither of those is the direction rule. A cycle
+is refused; a single arrow pointing the wrong way is not.
 
 Written down only, meaning a person is the whole mechanism: the direction
 dependencies run; the refusal of any write path that reaches the record tables
@@ -169,6 +203,7 @@ What the tree does check is a different set, and it is worth naming so that the
 two are not confused:
 
     ls .github/workflows/
+    build.yml
     dco.yml
     dependency-review.yml
     scorecard.yml
@@ -177,9 +212,16 @@ two are not confused:
     zizmor.yml
 
 Those judge sign off, dependency advisories, supply chain hygiene, line endings
-and encoding in tracked text, dangerous Unicode, and the workflow files
-themselves. None of them reads a module boundary, and none of them could,
-because there are no modules yet.
+and encoding in tracked text, dangerous Unicode, the workflow files themselves,
+and whether both layers compile against the pinned toolchains. None of them
+reads a module boundary.
+
+The build one is the closest, and the distance is worth stating rather than
+blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to
+point both ways at once. It does not refuse an arrow pointing the wrong way: a
+line added to `server/crates/reporting/Cargo.toml` making the reporting engine
+depend on the workflow engine compiles, and this note is the only thing that
+says it may not. #116 is where that becomes a test.
 
 Two issues would move items from the second list to the first. #116 turns the
 architecture rules into tests, which is where the dependency direction and the

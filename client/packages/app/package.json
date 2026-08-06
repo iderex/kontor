@@ -1,0 +1,10 @@
+{
+  "name": "@kontor/app",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build --verbose"
+  }
+}

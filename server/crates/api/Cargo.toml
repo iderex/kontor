@@ -1,0 +1,17 @@
+[package]
+name = "kontor-api"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+kontor-metadata = { path = "../metadata" }
+kontor-record = { path = "../record" }
+kontor-reporting = { path = "../reporting" }
+kontor-workflow = { path = "../workflow" }

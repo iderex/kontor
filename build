@@ -1,0 +1,49 @@
+#!/bin/sh
+# One command from a fresh clone to a green build of both layers.
+#
+# What it needs installed beforehand is in CONTRIBUTING.md and this script
+# refuses rather than assumes: it compares the toolchain actually on the path
+# against the version pinned in the tree and stops on a mismatch. rustup applies
+# rust-toolchain.toml on its own, so the Rust check is a confirmation. Nothing
+# applies .nvmrc on its own, so the Node check is the only thing standing
+# between a pinned version and a build that quietly used another one.
+#
+# POSIX sh rather than a build system. docs/decisions/0001-means.md refuses a
+# third party build system in front of cargo, and this is not one: it runs the
+# toolchains' own verbs in order and adds no build rules of its own. It is a
+# dependency all the same, which is why it is a single file and stays one.
+set -eu
+
+cd "$(dirname "$0")"
+
+fail() {
+    echo "build: $1" >&2
+    exit 1
+}
+
+# Node, pinned by .nvmrc. Compared against the interpreter on the path rather
+# than against nvm's opinion, because the build uses the first one.
+pinned_node=$(tr -d ' \t\r\n' < .nvmrc)
+command -v node >/dev/null 2>&1 || fail "node is not on the path. CONTRIBUTING.md says what to install."
+actual_node=$(node --version | sed 's/^v//')
+[ "$actual_node" = "$pinned_node" ] || fail "node is $actual_node and .nvmrc pins $pinned_node. Run 'nvm use' or install $pinned_node; do not edit .nvmrc to match your machine."
+
+# Rust, pinned by rust-toolchain.toml. rustup honours that file inside this
+# directory, so a mismatch here means cargo did not come from rustup.
+pinned_rust=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+command -v rustc >/dev/null 2>&1 || fail "rustc is not on the path. CONTRIBUTING.md says what to install."
+actual_rust=$(rustc --version | cut -d' ' -f2)
+[ "$actual_rust" = "$pinned_rust" ] || fail "rustc is $actual_rust and rust-toolchain.toml pins $pinned_rust. Install rustup, which applies that file; do not edit the file to match your machine."
+
+echo "build: node $actual_node, rustc $actual_rust, both as pinned"
+
+# --locked and npm ci both refuse to proceed against a stale or absent lock
+# file, so neither layer can be built from a resolution nobody committed.
+echo "build: server"
+cargo build --locked --manifest-path server/Cargo.toml
+
+echo "build: client"
+npm ci --prefix client
+npm run build --prefix client
+
+echo "build: both layers green"
