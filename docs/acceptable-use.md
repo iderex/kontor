@@ -114,27 +114,31 @@ something they have to be able to justify.
 
 ## The state of all of this today
 
-None of the features named above exists. The tree holds one module with
-behaviour in it and a set of crates that compile and do nothing, which is
+None of the features named above exists. The tree holds two modules with
+behaviour in them and a set of crates that compile and do nothing, which is
 readable rather than asserted. Read against
-`5b1ee7023c316b5ced686d8ced041c9b09c7bb01`, the tip of the default branch as
+`6f894536d33f7cab3eb0594e851d6d17b550d045`, the tip of the default branch as
 this was written:
 
-    for p in $(git ls-tree -r --name-only 5b1ee70 -- server/crates client/packages \
+    for p in $(git ls-tree -r --name-only 6f89453 -- server/crates client/packages \
                  | grep -E '\.(rs|ts)$'); do
-      printf '%6s %s\n' "$(git show "5b1ee70:$p" | wc -l)" "$p"
+      printf '%6s %s\n' "$(git show "6f89453:$p" | wc -l)" "$p"
     done
         12 client/packages/app/fixtures/checked-index.ts
         14 client/packages/app/fixtures/unchecked-index.ts
          7 client/packages/app/src/main.ts
          6 server/crates/api/src/lib.rs
          7 server/crates/kontor/src/main.rs
-         3 server/crates/metadata/src/lib.rs
+       403 server/crates/metadata/src/definition.rs
+       295 server/crates/metadata/src/field_type.rs
+        23 server/crates/metadata/src/lib.rs
+       574 server/crates/metadata/tests/definitions.rs
        490 server/crates/money/src/lib.rs
        358 server/crates/money/tests/properties.rs
          4 server/crates/record/src/lib.rs
          4 server/crates/reporting/src/lib.rs
          5 server/crates/store/src/lib.rs
+        80 server/crates/store/tests/needs_postgres.rs
          4 server/crates/workflow/src/lib.rs
 
 So every sentence above is about a product being built rather than one being
