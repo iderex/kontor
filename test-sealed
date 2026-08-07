@@ -1,0 +1,105 @@
+#!/bin/sh
+# The unit suite, in an environment that has none of what a unit test may not
+# need, rather than in one that merely happens to have nothing.
+#
+#     ./test-sealed
+#
+# ./test states the rule and ./test-scan refuses a test whose source reaches
+# past it. Both judge the source. This judges the environment. The suite runs
+# inside a network namespace of its own, where the only interface is a loopback
+# that is down and there is no route out of it, as an ordinary user who cannot
+# become root for as long as the seal holds. A test that quietly needs an
+# outbound socket goes red here even when its source says nothing the register
+# in ./test-scan knows how to refuse.
+#
+# WHY A NAMESPACE RATHER THAN A FIREWALL RULE. A rule that drops outbound
+# traffic in a workflow job drops the job's own connection to the service
+# watching it, so the job dies instead of reporting, and the verdict is lost
+# rather than red. A namespace is around this process alone, and everything
+# outside it keeps the network it had.
+#
+# WHY THE COMPILER RUNS OUTSIDE THE SEAL. This workspace has dependencies and
+# the registry is on the far side of the seal, so the fetch and the compile
+# happen first and the seal is handed a tree with nothing left to fetch. What is
+# claimed here is that the SUITE reaches for nothing, and not that a cold clone
+# compiles without a network. `--offline` inside is what makes a fetch that was
+# missed a refusal rather than a hang.
+#
+# WHAT THE SEAL DOES NOT REMOVE. A display server reached through a path on the
+# filesystem is still reachable from inside a network namespace, so this script
+# refuses to start when one is named rather than pretending the seal took it
+# away. ./prove-sealed has the leg that shows the refusal.
+#
+# ./prove-sealed is the evidence that the seal is real, and it gets it by running
+# one command on each side of it rather than by reading this comment.
+#
+# POSIX sh, matching ./test, because the whole of this is one process launched
+# under another and it adds no test rules of its own.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+# The far side. The outer run re-enters this file rather than writing a second
+# one, so what is claimed about the seal and what runs inside it cannot drift
+# apart.
+if [ "${1-}" = "--inside" ]; then
+    # The seal is read rather than assumed. `unshare` reporting success and
+    # leaving this process on the host's network is the case that matters: the
+    # suite would pass, the run would be green, and the green would mean
+    # nothing. /proc/net is the kernel's own answer to which network this
+    # process is on.
+    others=$(sed -n '3,$s/^ *\([^:]*\):.*/\1/p' /proc/net/dev | grep -v '^lo$' || true)
+    if [ -n "$others" ]; then
+        echo "test-sealed: inside the seal there is an interface besides loopback, so this is not a namespace of its own: $others" >&2
+        exit 1
+    fi
+
+    routes=$(sed -n '2,$p' /proc/net/route | grep -c . || true)
+    if [ "$routes" -ne 0 ]; then
+        echo "test-sealed: inside the seal there are $routes route(s), and a sealed suite has nowhere to send a packet." >&2
+        exit 1
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "test-sealed: inside the seal this is running as root, and the suite is meant to run without administrative rights." >&2
+        exit 1
+    fi
+
+    echo "test-sealed: inside. One interface, loopback, down, and no route from it."
+
+    # CARGO_NET_OFFLINE as well as the flag, because the flag covers the cargo
+    # this line runs and the variable covers anything that run starts.
+    CARGO_NET_OFFLINE=true
+    export CARGO_NET_OFFLINE
+    ./test --offline
+    exit 0
+fi
+
+command -v unshare >/dev/null 2>&1 || {
+    echo "test-sealed: unshare is not on the path, so no seal can be built here and this command will not report on one it did not build. It is a Linux command; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+    exit 1
+}
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "test-sealed: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+if [ -n "${DISPLAY-}" ] || [ -n "${WAYLAND_DISPLAY-}" ]; then
+    echo "test-sealed: DISPLAY or WAYLAND_DISPLAY names a display server, and a network namespace does not take away one reached through a path on the filesystem. Unset both and run again, rather than reading a green run as a suite that had none." >&2
+    exit 1
+fi
+
+echo "test-sealed: fetching and compiling outside the seal, because the registry is on the far side of it"
+cargo test --manifest-path server/Cargo.toml --workspace --locked --no-run
+
+echo "test-sealed: entering a network namespace of this process's own"
+# --map-current-user rather than --map-root-user: the point is a suite that runs
+# without administrative rights, and mapping this user to root inside would hand
+# it the appearance of some. The new user namespace is what makes the new
+# network namespace available to an ordinary user, and it is also what makes a
+# setuid binary inside unable to reach the host's root, because the host's uid 0
+# is mapped to nobody in it.
+unshare --user --map-current-user --net -- "$(pwd)/test-sealed" --inside
+
+echo "test-sealed: green, and the environment it was green in had nothing to reach."

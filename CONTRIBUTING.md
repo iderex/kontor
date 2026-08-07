@@ -164,6 +164,34 @@ outbound socket is refused, the same test marked for an outbound network is
 accepted, a marking naming something outside the four is refused, and a test
 that reaches for nothing passes.
 
+Those two judge the source. What judges the environment is a third command and
+the evidence that it is doing anything:
+
+    ./test-sealed
+    ./prove-sealed
+
+`./test-sealed` runs the same suite inside a network namespace of its own, where
+the only interface is a loopback that is down, there is no route out of it, and
+the user cannot become root while the seal holds. It reads `/proc/net` before it
+starts the suite and refuses rather than reporting on a seal it did not get, so
+a green run is a statement about the environment and not only about the tests.
+It compiles outside the seal and runs inside it with `--offline`, because the
+claim is that the suite reaches for nothing rather than that a cold clone builds
+without a registry. It is Linux only, and it says so and stops rather than
+passing on a machine where `unshare` does not exist.
+
+A display server is the one of the four a network namespace leaves alone, since
+one reached through a path on the filesystem is still there inside. `./test-sealed`
+refuses to start when `DISPLAY` or `WAYLAND_DISPLAY` names one, rather than
+letting a green run be read as a suite that had none.
+
+`./prove-sealed` is the evidence, and every leg of it is a pair: one command run
+on each side of the seal, with both exit codes read. A seal that quietly stopped
+sealing reddens the inside half of every pair while the outside half goes on
+passing, which is the case a single-sided check cannot see. The last pair is a
+cargo test target that opens a socket, which passes outside the seal and is red
+inside it.
+
 What no command here checks is a unit test inside a crate's `src/`, in a
 `#[cfg(test)]` module. It is part of the library target and cannot carry
 `required-features` at all, so there is nothing to check it against and a reader
@@ -215,12 +243,14 @@ The tree it builds:
     prove-determinism
     prove-headless
     prove-quality
+    prove-sealed
     regenerate
     rust-toolchain.toml
     server
     test
     test-needs-a-database
     test-scan
+    test-sealed
     text-scan
 
 ## What runs on a pull request
@@ -302,11 +332,24 @@ simulator or a database is marked for which of those it needs and is excluded
 from the default run by configuration rather than by a flag anybody has to
 remember.
 
-Nothing enforces that today and no command lists the marked tests, because
-neither the suite nor the marking exists. #7 defines the marking and owes the
-command that prints it, and #5 builds the suite it would print from. The rule is
-stated here so that the first test written is written under it, not so that a
-reader can check it.
+What is marked, and what each marked target needs:
+
+    ./test --marked
+
+Three things carry that rule now, and they carry different halves of it.
+`./test-scan` refuses an unmarked test whose source reaches for one of the four,
+before anything is compiled. `./test-sealed` runs the suite where none of the
+three the environment can supply is there to reach. `./prove-headless` and
+`./prove-sealed` are what say each of those still refuses what it names. The
+section above describes all four and is where the detail is; this is the rule in
+one sentence and the command that prints it.
+
+This passage said the opposite until this commit: that nothing enforced the rule
+and no command listed the marked tests, because neither the suite nor the
+marking existed. Both existed by then. It was found by reading this document
+against the commands the tree actually holds, which is the reading the
+enumeration rule elsewhere in it asks for, and the correction is here rather
+than only in the section that already knew.
 
 ## Commit messages
 
