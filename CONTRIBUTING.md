@@ -138,12 +138,36 @@ database is not one of these and belongs to the second command, which takes
     KONTOR_TEST_DATABASE_URL=postgres://kontor:kontor@127.0.0.1:5432/kontor \
       ./test-needs-a-database
 
+A test in the default suite may need nothing outside the machine, and there are
+four things it can need instead: a display server, an outbound network, a
+simulator or a database. A test that needs one is marked with the feature named
+for it, and `./test-scan` refuses an unmarked test that reaches for one before
+anything is compiled.
+
 The separation is made by cargo rather than by anybody's memory. A test target
 that needs something declares `required-features` in its crate's manifest, and
 cargo does not build a target whose required features are off, so the default
-run leaves it out with no argument to remember. #7 widens that marking to the
-four things a test here can need, and makes an unmarked test that reaches for
-one of them fail at collection rather than at an assertion.
+run leaves it out with no argument to remember. What is marked is printed rather
+than listed here, because a list in a document drifts against the manifests:
+
+    ./test --marked
+
+`./test` runs the scan itself before it compiles anything, so the refusal
+arrives with the cause rather than as a connection error in the middle of a run,
+which reads like a flake and passes on the next machine.
+
+    ./test-scan
+    ./prove-headless
+
+The second is the evidence that the first bites: an unmarked test that opens an
+outbound socket is refused, the same test marked for an outbound network is
+accepted, a marking naming something outside the four is refused, and a test
+that reaches for nothing passes.
+
+What no command here checks is a unit test inside a crate's `src/`, in a
+`#[cfg(test)]` module. It is part of the library target and cannot carry
+`required-features` at all, so there is nothing to check it against and a reader
+is the whole mechanism. #117 is where that half belongs.
 
 Both are the server's. The client workspace has no tests and no runner, and #63
 is where its half belongs; a client leg that ran nothing and reported green
@@ -189,12 +213,14 @@ The tree it builds:
     format
     lint
     prove-determinism
+    prove-headless
     prove-quality
     regenerate
     rust-toolchain.toml
     server
     test
     test-needs-a-database
+    test-scan
     text-scan
 
 ## What runs on a pull request

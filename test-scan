@@ -1,0 +1,143 @@
+#!/bin/sh
+# A test that needs something the default suite cannot give it is marked, and an
+# unmarked one that reaches for it is refused here rather than at an assertion.
+#
+# Run from anywhere:
+#
+#     test-scan
+#     test-scan --root <directory>
+#
+# The four things a test in this project can need are a display server, an
+# outbound network, a simulator and a database. They are the four
+# docs/layout.md names, and each has a feature named for it. A test target that
+# needs one declares that feature in `required-features`, which is what keeps it
+# out of ./test, and the feature name is what says WHICH of the four it needs
+# rather than only that it is special.
+#
+# WHY THIS RUNS BEFORE THE SUITE RATHER THAN INSIDE IT. An unmarked test that
+# opens an outbound socket fails somewhere in the middle of a run, with a message
+# about a connection, and reads exactly like a flake: rerun it on a machine with
+# a network and it passes. The cause and the failure are far apart. Refusing the
+# source before anything is compiled puts them together, and the message below
+# names the file, the reach and the feature that would have made it legal.
+#
+# WHAT IT DOES NOT REACH. A unit test inside a crate's src/, in a `#[cfg(test)]`
+# module, is part of the library target and cannot carry `required-features` at
+# all, so there is nothing for this scan to check it against and nothing here
+# refuses one. The rule for those is that they may not reach for any of the four
+# at all, and today a reader is the whole mechanism. #117 is the issue that
+# proves the headless rule across the whole tree and is where that half belongs.
+#
+# The authority for what is marked is cargo, read through `cargo metadata`, not a
+# path convention: a convention is a second statement of the truth that drifts
+# against the manifests. node reads the JSON because this tree already requires
+# node and does not require jq, which is the reason docs/layout.md gives for the
+# commands it prints elsewhere.
+#
+# POSIX sh, matching ./build, with the JSON reading handed to the one runtime the
+# tree already pins.
+#
+# ./prove-headless is what shows this file bites, and it runs this file rather
+# than a copy of its rules.
+set -eu
+
+root=.
+if [ "${1-}" = "--root" ]; then
+    root=$2
+    shift 2
+fi
+
+cd "$(CDPATH= cd "$root" && pwd)"
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "test-scan: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+command -v node >/dev/null 2>&1 || {
+    echo "test-scan: node is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+manifest=server/Cargo.toml
+[ -f "$manifest" ] || manifest=Cargo.toml
+
+cargo metadata --format-version 1 --no-deps --manifest-path "$manifest" \
+    | node -e '
+// The register: the four things a test can need, the feature that marks each
+// one, and the shapes in source that reach for it. The shapes are a floor and
+// not a guarantee - they hold what a test in this tree could plausibly write
+// today, and a reach nobody has written yet is not in the list.
+const needs = [
+  {
+    what: "a display server",
+    feature: "needs-a-display",
+    reaches: [/\bDISPLAY\b/, /\bwinit\b/, /\bwebdriver\b/i, /\bchromedriver\b/, /\bplaywright\b/i, /\bheadless_chrome\b/],
+  },
+  {
+    what: "an outbound network",
+    feature: "needs-an-outbound-network",
+    reaches: [/\bTcpStream\b/, /\bUdpSocket\b/, /\bToSocketAddrs\b/, /\bstd::net\b/, /\breqwest\b/, /\bureq\b/],
+  },
+  {
+    what: "a simulator",
+    feature: "needs-a-simulator",
+    reaches: [/\bsimctl\b/, /\bxcrun\b/, /\bemulator\b/, /\badb\s/],
+  },
+  {
+    what: "a database",
+    feature: "needs-postgres",
+    reaches: [/postgres:\/\//, /\btokio_postgres\b/, /\bsqlx\b/, /KONTOR_TEST_DATABASE_URL/],
+  },
+];
+
+const known = new Set(needs.map((n) => n.feature));
+const fs = require("node:fs");
+
+let raw = "";
+process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+  const meta = JSON.parse(raw);
+  const problems = [];
+  let looked = 0;
+
+  for (const pkg of meta.packages) {
+    for (const target of pkg.targets) {
+      if (!target.kind.includes("test")) continue;
+      looked += 1;
+      const marks = target["required-features"] || [];
+
+      // A marking that names something outside the register is a marking
+      // nothing here can read, which is the same as no marking at all.
+      for (const mark of marks) {
+        if (!known.has(mark)) {
+          problems.push(
+            `${target.src_path}: marked "${mark}", which is not one of ${[...known].join(", ")}`,
+          );
+        }
+      }
+      if (marks.length > 0) continue;
+
+      const source = fs.readFileSync(target.src_path, "utf8");
+      for (const need of needs) {
+        for (const reach of need.reaches) {
+          if (reach.test(source)) {
+            problems.push(
+              `${target.src_path}: reaches for ${need.what} (${reach.source}) and is not marked. Declare required-features = ["${need.feature}"] for this target, or take the reach out.`,
+            );
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (problems.length > 0) {
+    for (const line of problems) process.stderr.write(`test-scan: ${line}\n`);
+    process.stderr.write(
+      "test-scan: an unmarked test reaching for one of these makes the default suite need something a fresh clone does not have, and the failure it produces looks like a flake.\n",
+    );
+    process.exit(1);
+  }
+
+  process.stdout.write(`test-scan: ${looked} test target(s), every reach marked for what it needs.\n`);
+});
+'

@@ -1,0 +1,165 @@
+#!/bin/sh
+# The marking, shown to bite.
+#
+# A gate that has never refused anything is a claim, not a control. Every leg
+# here runs the shipped scan against a fixture workspace and reads the exit code;
+# none of them re-implements the register of reaches, so a shape removed from
+# test-scan is removed here too and the leg that depended on it goes red.
+#
+# Run from anywhere:
+#
+#     ./prove-headless
+#
+# The fixtures are built rather than tracked. A tracked crate holding an unmarked
+# test that opens a socket is exactly what test-scan refuses, so committing one
+# would redden the real run for the sake of proving that it can. Each case is a
+# throwaway cargo workspace with one crate and one test target, because the scan
+# reads what cargo reports and nothing else.
+#
+# POSIX sh, matching ./build, because the legs are exit codes from another
+# program.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "prove-headless: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (exit $?, and it was supposed to pass)"
+    fi
+}
+
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+echo "prove-headless: the marking"
+
+# One throwaway workspace per case: a crate, a test target, and whatever
+# required-features the case is about. The manifest is written here rather than
+# copied from the tree, because what the case is about is the marking and not
+# the lint or edition settings the real workspace carries.
+marking_case() {
+    what=$1
+    body=$2
+    marks=$3
+    expectation=$4
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/crates/probe/src" "$tmp/crates/probe/tests"
+    cat > "$tmp/Cargo.toml" <<EOF
+[workspace]
+resolver = "3"
+members = ["crates/probe"]
+EOF
+    {
+        echo '[package]'
+        echo 'name = "probe"'
+        echo 'version = "0.0.0"'
+        echo 'edition = "2024"'
+        echo 'publish = false'
+        echo
+        echo '[features]'
+        echo 'needs-a-display = []'
+        echo 'needs-an-outbound-network = []'
+        echo 'needs-a-simulator = []'
+        echo 'needs-postgres = []'
+        echo 'invented-here = []'
+        echo
+        echo '[[test]]'
+        echo 'name = "probe"'
+        if [ -n "$marks" ]; then
+            echo "required-features = [\"$marks\"]"
+        fi
+    } > "$tmp/crates/probe/Cargo.toml"
+    echo '' > "$tmp/crates/probe/src/lib.rs"
+    printf '%s\n' "$body" > "$tmp/crates/probe/tests/probe.rs"
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh "$root/test-scan" --root "$tmp"
+    else
+        expect_green "$what" sh "$root/test-scan" --root "$tmp"
+    fi
+
+    rm -rf "$tmp"
+}
+
+reaches_the_network='use std::net::TcpStream;
+#[test]
+fn it_connects() {
+    let _ = TcpStream::connect("example.org:80");
+}'
+
+reaches_nothing='#[test]
+fn it_adds() {
+    assert_eq!(2 + 2, 4);
+}'
+
+reaches_a_display='#[test]
+fn it_draws() {
+    let _ = std::env::var("DISPLAY");
+}'
+
+marking_case "an unmarked test that opens an outbound socket is refused" \
+    "$reaches_the_network" "" red
+
+# The leg that says the refusal above is about the marking rather than about the
+# bytes: the same file, with the target marked for what it needs, is accepted.
+marking_case "the same test marked for an outbound network is accepted" \
+    "$reaches_the_network" "needs-an-outbound-network" green
+
+marking_case "an unmarked test that reaches for a display is refused" \
+    "$reaches_a_display" "" red
+
+marking_case "the same test marked for a display is accepted" \
+    "$reaches_a_display" "needs-a-display" green
+
+# The near miss. Somebody who has read the rule and marked the target, with a
+# name of their own invention, has satisfied the shape of it and said nothing a
+# reader or a workflow can act on.
+marking_case "a marking naming something outside the four is refused" \
+    "$reaches_the_network" "invented-here" red
+
+# The leg that stops the evidence from being satisfied by a scan that refuses
+# everything put in front of it.
+marking_case "an unmarked test that reaches for nothing is accepted" \
+    "$reaches_nothing" "" green
+
+echo "prove-headless: the tree itself"
+
+expect_green "every test target in this repository passes the same scan" \
+    sh "$root/test-scan"
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-headless: a leg above did not do what it says. The marking is not proven." >&2
+    exit 1
+fi
+
+echo "prove-headless: every leg did what it says."

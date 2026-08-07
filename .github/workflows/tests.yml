@@ -42,6 +42,45 @@ jobs:
         # job is where it goes red.
         run: ./test
 
+  marking:
+    name: Reject a test that reaches for what the default suite cannot give it
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. node is what reads cargo's JSON here.
+          node-version-file: .nvmrc
+
+      - name: Reject a test that reaches for what the default suite cannot give it
+        # The rule lives in the script, which ./test also runs before it
+        # compiles anything, so a contributor sees the same refusal before
+        # pushing rather than a connection error in the middle of a run.
+        run: ./test-scan
+
+  marking-proof:
+    name: Prove the marking bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # Each leg builds a fixture workspace, runs the shipped scan against it
+        # and reads the exit code, so a reach removed from the register reddens
+        # the leg that depended on it.
+        run: ./prove-headless
+
   needs-a-database:
     name: Run the suite that needs a database
     runs-on: ubuntu-latest

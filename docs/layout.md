@@ -26,12 +26,14 @@ tree holds today is smaller, and reading it is one command:
     format
     lint
     prove-determinism
+    prove-headless
     prove-quality
     regenerate
     rust-toolchain.toml
     server
     test
     test-needs-a-database
+    test-scan
     text-scan
 
 `server/` and `client/` are there since #2, holding workspaces that compile and
@@ -120,16 +122,21 @@ exception it does not state either. That exception is `client/suppression-scan`,
 one layer down, which the lint script calls. The third is what says all four
 gates still refuse what they say they refuse.
 
-`test`, `test-needs-a-database` and `coverage` sit beside them, and the second
-name is the rule: a suite is named for what it needs rather than for what it
+`test`, `test-needs-a-database`, `test-scan`, `prove-headless` and `coverage`
+sit beside them, and the second name is the rule: a suite is named for what it needs rather than for what it
 covers, because a name like "integration" tells nobody reading a red run what to
 install. The split between them is made by cargo and not by a convention. A test
 target declares `required-features` in its crate's manifest and cargo does not
 build a target whose required features are off, so `./test` leaves the marked
-targets out without an argument anybody has to remember. `coverage` runs the
-first suite under instrumentation and refuses below a floor that is a
-measurement rather than a target, with the run that produced it in a comment
-beside the number.
+targets out without an argument anybody has to remember. `test-scan` is the
+other half of that: it refuses an unmarked test target whose source reaches for
+one of the four things a test here can need, and `./test` runs it before
+anything is compiled so that the refusal arrives with the cause rather than as a
+connection error in the middle of a run. `prove-headless` builds a throwaway
+workspace per case and says the scan still bites. `coverage` runs the first
+suite under instrumentation and refuses below a floor that is a measurement
+rather than a target, with the run that produced it in a comment beside the
+number.
 
 `text-scan`, `regenerate` and `prove-determinism` sit beside it at the root, for
 the reason the top of this note gives: a contributor runs them, and a rule
@@ -297,8 +304,10 @@ type checks under strict mode, whether an escape from the client type system
 carries a reason, whether both layers are formatted the way their formatters
 want them, whether either linter has anything to say at a level where a warning
 fails, whether a lint suppression names its rule and gives its reason, whether
-both suites are green, and whether the unit suite still reaches as much of the
-server as the floor in `coverage` says. None of them reads a module boundary.
+both suites are green, whether every test that reaches for a display, a network,
+a simulator or a database is marked for it, and whether the unit suite still
+reaches as much of the server as the floor in `coverage` says. None of them
+reads a module boundary.
 
 The build one is the closest, and the distance is worth stating rather than
 blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to
