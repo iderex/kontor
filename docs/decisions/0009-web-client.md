@@ -79,6 +79,76 @@ milestone owns the slow link case, which is why it is a milestone rather than a
 responsive layout, and that the budget below is what would say the answer had
 stopped being true, on the day something measures it.
 
+## Why one store rather than state per view
+
+Almost everything the interface needs is the same three things. The description
+document decides what every view renders, the identity and its permissions
+decide what every view offers, and a record opened from a list is the same
+record the record page shows. Holding those once and letting views read them is
+the arrangement in which two views cannot disagree about a record, because there
+is only one of it.
+
+The direction is the part worth writing down. Views read from the store and
+never from each other. A view that reaches into another view is how a list ends
+up depending on whether a record page happened to be open first, and that
+dependency is invisible until somebody navigates in the other order.
+
+The rejected alternative is state per view, each view fetching what it needs and
+owning it. It is less code, it has no shared invalidation to get wrong, and for
+an application of this size it would ordinarily be the right answer. It is
+rejected on two specific costs. The description document is the one thing every
+view needs, it is the largest response the client fetches, and it is the least
+likely to have changed, so fetching it per view multiplies exactly the wrong
+request. And two views holding their own copy of one record disagree the moment
+one of them is edited, which is a defect that reads as data loss to the person
+looking at the stale copy.
+
+A state management library is rejected for the same reason as a framework. The
+problem here is one module holding three things, and a dependency the operator
+runs is a high price for that.
+
+What the chosen arrangement costs is invalidation, and this record does not
+pretend it is solved. A record cached by identifier goes stale when somebody
+else changes it on the server, and nothing in this decision says how the client
+learns that. The description document has an answer, which is the version
+mechanism below. A record does not, and until it does, the honest statement is
+that the cache is refreshed when a view asks for it again and that a second
+person's edit is not seen until then.
+
+## Why the History API rather than the fragment
+
+Routing is the History API against a route table derived from the description
+document. The derivation is the point: an object an operator created this
+morning has a URL because it is in the description, not because somebody added a
+route for it, which is the same property the component per field type decision
+exists to keep.
+
+A real path also makes a record something one person can send to another inside
+the operator's organisation, and makes reload land where the person was rather
+than at the top.
+
+The rejected alternative is fragment routing, meaning the part of the URL after
+the hash. It is genuinely cheaper: the server needs no configuration at all,
+every path is already served because none of them ever reaches the server, and
+it works from a file with no instance behind it. It is rejected because the
+reason it exists does not apply here. The instance already runs a server, that
+server is already answering the API, and serving one document for every client
+path is a line of routing rather than a deployment problem. The fragment is also
+never sent to the server, so choosing it would foreclose rendering anything on
+the server later without changing every URL in existence, and the condition that
+would reverse the server rendering decision is written at the end of this record
+rather than ruled out.
+
+A routing library is rejected on the framework argument unchanged.
+
+What the History API costs is a requirement on the server, and it is named here
+because it is easy to discover late. The instance must answer any path that is
+not the API and not a static asset with the client document, so that a reload on
+a deep link works. The consequence is that a mistyped path cannot be refused by
+the server, since the server cannot tell it from a client route it does not know
+about. It arrives at the client and the client is the thing that has to say the
+record does not exist.
+
 ## How the metadata reaches the interface
 
 The client fetches the description document after authenticating and before
