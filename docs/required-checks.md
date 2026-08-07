@@ -315,6 +315,10 @@ there is exactly one red:
       1 failure
     271 success
 
+The success count moves with every push and is not the figure to read. The
+figure is the one on the other line, and it is the whole of the red this
+repository has recorded.
+
     gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100" \
       --jq '.workflow_runs[] | select(.conclusion=="failure") | [.name, .event, .head_sha[0:7]] | @tsv'
     tests   push    7d15599
