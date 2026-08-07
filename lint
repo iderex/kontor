@@ -48,7 +48,19 @@ esac
 # that quietly updates a dependency.
 lint_server() {
     echo "lint: server"
-    cargo clippy --manifest-path server/Cargo.toml --workspace --all-targets --locked
+    # --all-features so a test target that is behind a feature is judged too. A
+    # target cargo does not build is a target clippy never sees, and the
+    # integration suite of ./test-needs-a-database is exactly that: code a
+    # reviewer reads and no default run compiles.
+    #
+    # The fixture crate is the one place where --all-features would be wrong,
+    # because its features ARE the code that must be refused, so it is excluded
+    # here and linted on its own with none of them on. Excluding it by name
+    # rather than listing the features to enable elsewhere keeps this from
+    # becoming a list that drifts against the manifests.
+    cargo clippy --manifest-path server/Cargo.toml --workspace --all-targets --all-features \
+        --exclude kontor-lint-fixture --locked
+    cargo clippy --manifest-path server/Cargo.toml -p kontor-lint-fixture --all-targets --locked
 }
 
 lint_client() {

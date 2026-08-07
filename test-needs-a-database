@@ -1,0 +1,51 @@
+#!/bin/sh
+# The suite that needs a PostgreSQL database, named for what it needs rather
+# than for what it covers. A suite called "integration" tells somebody reading a
+# red run nothing about what to install.
+#
+#     KONTOR_TEST_DATABASE_URL=postgres://kontor:kontor@127.0.0.1:5432/kontor \
+#       ./test-needs-a-database
+#
+# It is not part of ./test and cannot be run by it by accident. Every target
+# here declares `required-features = ["needs-postgres"]` in its crate's
+# manifest, and cargo does not build a target whose required features are off,
+# so the default suite leaves these out by configuration rather than by a flag
+# anybody has to remember.
+#
+# The floor is major version 17, which docs/decisions/0001-means.md states.
+# Nothing here checks the version, because nothing in the tree yet uses a
+# feature that would tell one major from another; #17 is where a check belongs,
+# beside the first code that depends on the answer.
+#
+# What runs today is the harness rather than a test of this project's own code.
+# The store module is empty until #17, so there is nothing to exercise against a
+# real database, and what this proves is that the split exists and that the
+# database it names is reachable. That is worth having before the code, because
+# a suite invented after the code is a suite shaped by what the code happens to
+# do.
+#
+# POSIX sh, matching ./build and ./test.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "test-needs-a-database: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+if [ -z "${KONTOR_TEST_DATABASE_URL-}" ]; then
+    echo "test-needs-a-database: KONTOR_TEST_DATABASE_URL is not set, and this suite is the one that needs a database." >&2
+    echo "test-needs-a-database: point it at a PostgreSQL 17 instance you do not mind being written to, for example postgres://kontor:kontor@127.0.0.1:5432/kontor. ./test is the command that needs none." >&2
+    exit 1
+fi
+
+echo "test-needs-a-database: against $KONTOR_TEST_DATABASE_URL"
+
+# The feature is named on the command line here and only here. It is off
+# everywhere else, which is what keeps these targets out of ./test.
+cargo test --manifest-path server/Cargo.toml --workspace --locked \
+    --features kontor-store/needs-postgres \
+    --test needs_postgres "$@"
+
+echo "test-needs-a-database: green."

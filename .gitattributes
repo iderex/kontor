@@ -59,6 +59,9 @@
 /format                   text eol=lf
 /lint                     text eol=lf
 /prove-quality            text eol=lf
+/test                     text eol=lf
+/test-needs-a-database    text eol=lf
+/coverage                 text eol=lf
 
 # When the first image or font arrives, declare it with git's own `binary`
 # macro rather than with `-text` alone. The macro unsets `text`, which the

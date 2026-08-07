@@ -1,0 +1,83 @@
+#!/bin/sh
+# How much of the server the unit suite touches, and the floor it may not walk
+# under.
+#
+#     ./coverage
+#
+# It runs the same suite ./test runs, under instrumentation, prints the summary
+# and refuses if either number is below its floor. There is no separate "report"
+# verb: a coverage run nobody is refused by is a number that drifts down one
+# change at a time, which is the failure this file exists to prevent.
+#
+# THE FLOORS BELOW ARE A MEASUREMENT, NOT A TARGET. Each is what the tree
+# actually reached, truncated to a whole percent, and the run that produced it is
+# in the comment on the line above. A round number chosen because it sounds
+# strict is a floor nobody can tell has been met by accident, and a floor set at
+# exactly the measurement is one that reddens on a refactor that moves a line
+# without changing what is tested. Truncating is the smallest slack that avoids
+# the second without inventing the first.
+#
+# Raising a floor is a change to this file, argued in the issue that raises it.
+# Lowering one is the same, and it is the change a reviewer should be slowest to
+# agree with.
+#
+# What is measured and what is not.
+#
+# The unit suite only. The suite that needs a database is excluded because it is
+# excluded from ./test, and a number that moved depending on whether somebody
+# had a database running would not be a floor.
+#
+# server/fixtures/lint is excluded from both the run and the report. It is a
+# fixture crate whose entire purpose is to be refused by ./lint, nothing tests
+# it, and counting it would let somebody raise the number by deleting a fixture.
+#
+# The client is not measured at all. It has no tests and no runner; #63 makes
+# the web client testable and is where its floor belongs. A coverage number over
+# a workspace with no tests would be a number about nothing.
+#
+# POSIX sh, matching ./build, running the toolchain's own verb through the one
+# tool that reads the compiler's own instrumentation rather than a parallel
+# apparatus.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+# Measured at the commit that added this file:
+#
+#     cargo llvm-cov --manifest-path server/Cargo.toml --workspace \
+#       --exclude kontor-lint-fixture --locked --summary-only
+#
+# whose TOTAL row reads 287 regions at 75.96% and 233 lines at 80.69%. The row
+# is described rather than pasted because it is wider than this file, and a
+# reflowed paste would be a number nobody could line up against a rerun.
+#
+# The whole of the covered part is server/crates/money. Every other crate is a
+# module that exists so the dependency direction is expressed in cargo, and
+# server/crates/kontor/src/main.rs is a one line binary the suite never enters,
+# which is counted rather than excluded because excluding what is not covered is
+# how a coverage number stops meaning anything.
+floor_lines=80
+floor_regions=75
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "coverage: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+if ! cargo llvm-cov --version >/dev/null 2>&1; then
+    echo "coverage: cargo-llvm-cov is not installed. It is the one tool here that does not ship with the toolchain:" >&2
+    echo "coverage:     cargo install cargo-llvm-cov" >&2
+    echo "coverage: and the llvm-tools component, which /rust-toolchain.toml names, so rustup installs it inside this tree." >&2
+    exit 1
+fi
+
+echo "coverage: the unit suite, instrumented"
+
+if ! cargo llvm-cov --manifest-path server/Cargo.toml --workspace \
+    --exclude kontor-lint-fixture --locked --summary-only \
+    --fail-under-lines "$floor_lines" --fail-under-regions "$floor_regions"; then
+    echo "coverage: below the floor of $floor_lines% of lines and $floor_regions% of regions. Either the change added code the suite does not reach, or it removed a test." >&2
+    exit 1
+fi
+
+echo "coverage: at or above the floor of $floor_lines% of lines and $floor_regions% of regions."

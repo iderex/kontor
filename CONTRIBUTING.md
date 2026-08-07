@@ -124,11 +124,50 @@ of that script carries the command showing why the linter is the one it is, and
 `./prove-quality` has a leg that demonstrates the silence rather than asserting
 it.
 
-What `./build`, `./format` and `./lint` between them do not do is run a test
-suite, because none exists yet. #5 adds the harness and the coverage floor, #7
-makes the headless rule a gate, and #6 puts everything on the pull request under
-stable names. Until they land, the tree is compiled, formatted and linted, and
-nothing says whether it is correct.
+The suites are two commands, and the second one is named for what it needs:
+
+    ./test
+    ./test-needs-a-database
+    ./coverage
+
+`./test` is the unit suite. Every test in it runs with no display server, no
+administrative rights and no reachable network. A test that needs a real
+database is not one of these and belongs to the second command, which takes
+`KONTOR_TEST_DATABASE_URL` and refuses rather than guessing:
+
+    KONTOR_TEST_DATABASE_URL=postgres://kontor:kontor@127.0.0.1:5432/kontor \
+      ./test-needs-a-database
+
+The separation is made by cargo rather than by anybody's memory. A test target
+that needs something declares `required-features` in its crate's manifest, and
+cargo does not build a target whose required features are off, so the default
+run leaves it out with no argument to remember. #7 widens that marking to the
+four things a test here can need, and makes an unmarked test that reaches for
+one of them fail at collection rather than at an assertion.
+
+Both are the server's. The client workspace has no tests and no runner, and #63
+is where its half belongs; a client leg that ran nothing and reported green
+would be worse than this sentence.
+
+`./coverage` runs the same suite under instrumentation and refuses below a
+floor. THE FLOOR IS A MEASUREMENT AND NOT A TARGET. It is 80% of lines and 75%
+of regions, which is what the tree reached, truncated to a whole percent:
+
+    cargo llvm-cov --manifest-path server/Cargo.toml --workspace \
+      --exclude kontor-lint-fixture --locked --summary-only
+
+whose TOTAL row reads 287 regions at 75.96% and 233 lines at 80.69%. That row is
+described rather than pasted here because it is wider than this page.
+
+Truncating rather than taking the number itself is the smallest slack that stops
+a refactor moving one line from reddening the gate. Raising the floor is a
+change to `./coverage`, argued in the issue that raises it; lowering it is the
+same change and the one a reviewer should be slowest to agree with.
+
+That command needs `cargo-llvm-cov`, which is the one tool here that does not
+ship with the toolchain, and `./coverage` refuses with the install line rather
+than working around it. The `llvm-tools` component it reads is named in
+`rust-toolchain.toml`, so rustup installs that part inside this tree.
 
 The tree it builds:
 
@@ -145,6 +184,7 @@ The tree it builds:
     SECURITY.md
     build
     client
+    coverage
     docs
     format
     lint
@@ -153,6 +193,8 @@ The tree it builds:
     regenerate
     rust-toolchain.toml
     server
+    test
+    test-needs-a-database
     text-scan
 
 ## What runs on a pull request

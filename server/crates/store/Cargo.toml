@@ -9,3 +9,17 @@ publish = false
 
 [lints]
 workspace = true
+
+[features]
+# The marking that keeps the integration suite out of the default run, and it is
+# a feature rather than a flag on the command line so that a contributor cannot
+# forget it: `cargo test` does not build a target whose required-features are
+# off, and no argument is needed to leave it out.
+#
+# The name says what the suite needs rather than what it covers. A suite called
+# "integration" tells somebody reading a red run nothing about what to install.
+needs-postgres = []
+
+[[test]]
+name = "needs_postgres"
+required-features = ["needs-postgres"]
