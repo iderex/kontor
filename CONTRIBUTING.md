@@ -276,11 +276,28 @@ required check would be matched against:
     gh api "repos/iderex/kontor/commits/$(git rev-parse HEAD)/check-runs" \
       --jq '.check_runs[].name'
 
-The two answers are not the same set and are not meant to be. A workflow that
+And the names written into the workflow files, which is the set the two commands
+above are read against:
+
+    git grep -h '^    name: ' -- .github/workflows/ | sed 's/^    name: //' | sort
+
+Every job here carries a name written out in the file rather than derived from a
+job id or a matrix value, because a required check is matched by that string and
+a rename silently stops requiring it.
+
+The three answers are not the same set and are not meant to be. A workflow that
 triggers only on a pull request contributes no check run to a commit reached any
 other way, so the second command prints fewer names than the first on a commit
 that arrived on the default branch. Read the second one against your own head
 commit once the pull request exists.
+
+Every gate here is judged once per name on a given commit. A gate triggers on
+the pull request event and, where it also watches the default branch, on a push
+to that branch alone, so a commit that is both pushed to a working branch and in
+a pull request is not judged twice under one name. `docs/required-checks.md` is
+where that matters, because a name carried by two runs of two events cannot be
+required of a merge without somebody first reading how the platform resolves the
+duplicate.
 
 ## No work without an issue
 

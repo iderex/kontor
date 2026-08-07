@@ -10,10 +10,27 @@
 name: text-determinism
 
 on:
-  # Every branch and every pull request. The rule is about what is committed, so
-  # it has to hold on a branch that never becomes a pull request too.
+  # The pull request event, and the default branch on push. A commit that is in
+  # a pull request is judged once under each name here, and the default branch is
+  # judged again when the merge lands on it.
+  #
+  # It said every branch and every pull request until this commit, with the
+  # reason that the rule is about what is committed and has to hold on a branch
+  # that never becomes a pull request. The reason was true and the arrangement
+  # did not serve it. A commit that is both pushed and in a pull request was
+  # judged twice under every name, and a name carried by two runs of two events
+  # is a name whose meaning depends on how the platform resolves the duplicate,
+  # which is what docs/required-checks.md says has to be settled before any of
+  # these can be required of a merge. A branch that never becomes a pull request
+  # also never reaches the default branch, so what the old arrangement bought was
+  # a verdict on work that cannot land, at the price of the verdict that gates
+  # work that can.
+  #
+  # zizmor.yml already had this shape and its name was already carried by one
+  # run rather than two, so this is the tree agreeing with itself rather than a
+  # new position.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: ["**"]
 
