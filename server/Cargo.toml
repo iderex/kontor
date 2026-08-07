@@ -10,7 +10,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "fixtures/lint"]
 
 [workspace.package]
 edition = "2024"
@@ -26,3 +26,62 @@ publish = false
 # Nothing in this server needs unsafe, and forbid rather than deny so a module
 # cannot re-allow it locally without changing this line.
 unsafe_code = "forbid"
+
+# The level the lint gate runs at, and it is here rather than on the command
+# line so that `cargo clippy` in a contributor's terminal and the same command
+# in the workflow are judged identically. A warning that does not fail is a
+# warning that accumulates: the first one is read, the tenth is scrolled past,
+# and by the hundredth the output carries no information at all.
+#
+# `warnings` is the rustc group holding every lint that is warn by default, so
+# this line raises the whole default set rather than a list somebody has to keep
+# up to date.
+warnings = "deny"
+
+[workspace.lints.clippy]
+# The four groups clippy turns on by itself - correctness, suspicious, style and
+# complexity - plus perf. They are warnings by default, which the line above
+# already makes fatal; naming the group here is what says the level was chosen
+# rather than inherited. priority = -1 so that a single lint below can move on
+# its own without the group overriding it.
+all = { level = "deny", priority = -1 }
+
+# clippy::pedantic is NOT taken here, and it was measured rather than waved
+# away. Turning it on against the tree as it stands refuses forty two places,
+# every one of them in one crate:
+#
+#     cargo clippy --manifest-path server/Cargo.toml --workspace --all-targets \
+#       --message-format short -- --deny clippy::pedantic 2>&1 \
+#       | grep 'error: ' | grep -v 'could not compile' | wc -l
+#     42
+#
+# and the breakdown is missing `#[must_use]` attributes and missing `# Errors`
+# and `# Panics` doc sections rather than anything about the logic. Answering
+# them is a change to the money crate's documented surface, which is a different
+# topic from adding the gate, and a gate that lands red is a gate somebody turns
+# off. Whoever takes that crate's documentation next is the one to raise this
+# line, and the number above is what says how much it costs.
+
+# `unwrap` panics with no message, so the operator's log says a thread panicked
+# and nothing about which invariant broke. `expect` with a sentence is the
+# allowed form and is what the money crate's tests already use:
+#
+#     git grep -c 'expect(' -- server/crates/money/tests/properties.rs
+unwrap_used = "deny"
+
+# A suppression is allowed and an anonymous one is not. `allow_attributes`
+# refuses `#[allow(...)]` in favour of `#[expect(...)]`, which goes red when the
+# lint it silences stops firing, so a suppression cannot outlive the code that
+# needed it. `allow_attributes_without_reason` refuses either spelling that
+# carries no `reason = "..."`. Together they are the server half of the rule
+# that a suppression names its rule and carries its reason.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
+# `#[allow(clippy::restriction)]` switches off a whole group of lints that were
+# each enabled for their own reason. The narrow half of the blanket suppression
+# rule, and the whole of what clippy can refuse: nothing here refuses
+# `#[expect(warnings, reason = "...")]`, which is the wider blanket. That gap is
+# named in CONTRIBUTING.md and belongs to #113, which enforces the invariants a
+# search can refuse.
+blanket_clippy_restriction_lints = "deny"

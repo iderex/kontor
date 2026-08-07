@@ -22,8 +22,14 @@ tree holds today is smaller, and reading it is one command:
     build
     client
     docs
+    format
+    lint
+    prove-determinism
+    prove-quality
+    regenerate
     rust-toolchain.toml
     server
+    text-scan
 
 `server/` and `client/` are there since #2, holding workspaces that compile and
 nothing more. `mobile/`, `tests/`, `benchmarks/` and `fuzz/` are still names in
@@ -46,7 +52,12 @@ that exists or something that is being decided; it does not hold configuration
 that a program reads.
 
 `server/` holds the Rust workspace. Its crates are the server modules described
-below. No TypeScript lives here.
+below. No TypeScript lives here. `server/fixtures/` holds the files a gate has
+to refuse and their one-change neighbours, which is why it sits beside
+`server/crates/` rather than inside it: a fixture is not a module. The lint
+fixture there is a workspace member even so, because inheriting
+`[workspace.lints]` is the whole point of it, and every arm that must be refused
+is behind a feature nothing but `./prove-quality` asks for.
 
 `client/` holds the TypeScript web client. It depends on the generated contract
 and never on anything under `server/`. No Rust lives here.
@@ -78,6 +89,14 @@ rather than at the root of the repository, which is `server/Cargo.toml` with
 The pins are one repository-wide fact; the manifests are two workspaces that
 happen to live in one tree.
 
+The same division puts each formatter's and each linter's configuration at the
+root of the workspace it judges, so `server/rustfmt.toml`, `client/.prettierrc.yml`,
+`client/.prettierignore` and `client/.oxlintrc.json` are all one level down.
+Both formatters would find a file at the repository root by walking up, so this
+is a statement about which layer a setting belongs to rather than about what the
+tool can locate. A setting that ever applied to both layers at once would be the
+case for moving one up, and there is none.
+
 `build` at the root is the one command that takes a fresh clone to a compiled
 tree, and the build workflow runs that script rather than restating its steps.
 It is POSIX shell, which `docs/decisions/0001-means.md` allows as a dependency
@@ -87,6 +106,16 @@ invoke. It runs the toolchains' own verbs in order and adds no build rules of
 its own, so it is not the third party build system that record refuses. It also
 refuses a toolchain that does not match the pins, which is the only thing
 standing between `.nvmrc` and a build that quietly used a different Node.
+
+`format`, `lint` and `prove-quality` sit beside it at the root, because each one
+covers both layers and a script covering both belongs above either. The first
+runs each toolchain's own formatter, writing or only checking, and holds no
+formatting opinion of its own: a rule stated there would be one neither
+formatter reads. The second runs each toolchain's own linter at a level where a
+warning fails, and holds no rule of its own for the same reason, with one
+exception it does not state either. That exception is `client/suppression-scan`,
+one layer down, which the lint script calls. The third is what says all four
+gates still refuse what they say they refuse.
 
 `text-scan`, `regenerate` and `prove-determinism` sit beside it at the root, for
 the reason the top of this note gives: a contributor runs them, and a rule
@@ -99,11 +128,14 @@ difference, which is what stops a hand edit to one from surviving. The third
 proves all three rules bite, against fixtures it builds rather than against the
 tree it lives in.
 
-`client/escape-scan` and `client/prove-gates` are the same kind of thing one
-layer down, and they sit beside the workspace they judge rather than at the
-root. The first refuses an escape from the client type system that carries no
-reason.
-The second is what says both client gates still bite, by running the shipped
+`client/escape-scan`, `client/suppression-scan` and `client/prove-gates` are the
+same kind of thing one layer down, and they sit beside the workspace they judge
+rather than at the root. The first refuses an escape from the client type system
+that carries no reason. The second refuses a lint suppression that names no rule
+or gives no reason, and it is a script rather than a setting because the linter
+this workspace can install has no rule for either half; the comment at its top
+carries the command that says why that linter is the one it is.
+The third is what says both client type gates still bite, by running the shipped
 commands against fixtures and reading the exit codes, so a setting loosened
 where it lives reddens the leg that depended on it rather than passing quietly.
 The fixtures it judges sit in `client/packages/app/fixtures/`, which is outside
@@ -237,6 +269,7 @@ two are not confused:
     client-types.yml
     dco.yml
     dependency-review.yml
+    format-and-lint.yml
     scorecard.yml
     text-determinism.yml
     unicode-guard.yml
@@ -245,8 +278,11 @@ two are not confused:
 Those judge sign off, dependency advisories, supply chain hygiene, line endings
 and encoding in tracked text, dangerous Unicode, the workflow files themselves,
 whether both layers compile against the pinned toolchains, whether the client
-type checks under strict mode, and whether an escape from the client type system
-carries a reason. None of them reads a module boundary.
+type checks under strict mode, whether an escape from the client type system
+carries a reason, whether both layers are formatted the way their formatters
+want them, whether either linter has anything to say at a level where a warning
+fails, and whether a lint suppression names its rule and gives its reason. None
+of them reads a module boundary.
 
 The build one is the closest, and the distance is worth stating rather than
 blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to

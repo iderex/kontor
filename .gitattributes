@@ -41,15 +41,24 @@
 /build   text eol=lf
 /.nvmrc  text eol=lf
 
+# The same, for the file that says what the client formatter skips. It has no
+# extension either, and it is read line by line by a program that would take a
+# carriage return as part of the pattern on the line.
+/client/.prettierignore text eol=lf
+
 # The other scripts, declared for the same reason as /build: a carriage return
 # in a shell script is not cosmetic, it reaches the interpreter as part of the
 # last word on the line. Each one is anchored to the directory it sits in, so a
 # later file of the same name elsewhere does not inherit a rule aimed at these.
-/client/escape-scan  text eol=lf
-/client/prove-gates  text eol=lf
-/text-scan           text eol=lf
-/regenerate          text eol=lf
-/prove-determinism   text eol=lf
+/client/escape-scan       text eol=lf
+/client/prove-gates       text eol=lf
+/client/suppression-scan  text eol=lf
+/text-scan                text eol=lf
+/regenerate               text eol=lf
+/prove-determinism        text eol=lf
+/format                   text eol=lf
+/lint                     text eol=lf
+/prove-quality            text eol=lf
 
 # When the first image or font arrives, declare it with git's own `binary`
 # macro rather than with `-text` alone. The macro unsets `text`, which the

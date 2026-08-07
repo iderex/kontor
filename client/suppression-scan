@@ -1,0 +1,96 @@
+#!/bin/sh
+# A lint suppression in client source is allowed. One that names no rule, or one
+# that gives no reason, is not.
+#
+# Run from the repository root:
+#
+#     client/suppression-scan
+#
+# The two halves it refuses.
+#
+# A blanket suppression, meaning a directive with no rule after it. It switches
+# off every rule for the line, the next line or the rest of the file, including
+# the ones nobody had a problem with and the ones added after it was written.
+# What it silences grows on its own.
+#
+# A suppression with no reason. The directive says which rule was in the way and
+# nothing about why it was allowed to be, so a later reader cannot tell a
+# considered exception from a shortcut taken at the end of an afternoon, and has
+# no way to find out whether it still applies. The reason goes in the same
+# comment, after `--`, which is the form the linter itself parses and ignores.
+#
+# So the accepted shape is
+#
+#     // oxlint-disable-next-line no-await-in-loop -- the calls must be ordered
+#
+# and both spellings of the directive are read here, because oxlint honours
+# `eslint-disable` as well as its own and a rule that covered one of them would
+# be a rule somebody satisfies by typing the other.
+#
+# WHY THIS IS A SCRIPT AND NOT A SETTING IN .oxlintrc.json. It is a setting in
+# no linter this workspace can install. The rule belongs to eslint's
+# eslint-comments plugin, whose rules no-unlimited-disable and
+# require-description are exactly these two halves, and eslint's TypeScript
+# route is closed against the TypeScript this tree pins:
+#
+#     npm install typescript@7.0.2 eslint@10.8.0 typescript-eslint@8.66.0
+#     npm error code ERESOLVE
+#     npm error Could not resolve dependency:
+#     npm error peer typescript@">=4.8.4 <6.1.0" from typescript-eslint@8.66.0
+#
+# oxlint has no counterpart rule and honours a blanket directive silently, which
+# ./prove-quality demonstrates rather than asserts. So the refusal lives here.
+# The server half of the same rule is not a script: clippy can express it, and
+# server/Cargo.toml says so with allow_attributes_without_reason.
+#
+# POSIX sh, for the reason client/escape-scan gives for being one: the rule is
+# about the text of a line and needs no parse of the program.
+#
+# It reads tracked client sources through git rather than the working tree, so
+# fetched dependencies cannot be scanned by accident and a file nobody committed
+# cannot introduce a verdict.
+#
+# client/prove-quality is what shows this file bites, and it runs this file
+# rather than a copy of its rules.
+set -eu
+
+# A directive in either spelling, in any of its three ranges.
+directive='(?:ox|es)lint-disable(?:-next-line|-line)?'
+
+# What a good one looks like: the directive, then at least one rule name that is
+# not the reason marker, then the marker followed by something.
+good="$directive[ \\t]+(?!--)[^\\s]+[^\\r\\n]*--[ \\t]*\\S"
+
+# git grep: 0 = found, 1 = nothing found, 2 or above = the scanner itself
+# failed. The exit code is captured so `set -e` does not abort on the clean
+# exit 1, and anything above 1 fails closed rather than being read as a clean
+# tree.
+rc=0
+hits=$(git grep -n -P "$directive" -- \
+    ':(glob)client/**/*.ts' \
+    ':(glob)client/**/*.tsx' \
+    ':(glob)client/**/*.mts' \
+    ':(glob)client/**/*.cts') || rc=$?
+
+case "$rc" in
+    0) ;;
+    1)
+        echo "suppression-scan: no lint suppression in tracked client source."
+        exit 0
+        ;;
+    *)
+        echo "suppression-scan: git grep exited $rc. Failing closed rather than reading a broken scanner as a clean tree." >&2
+        exit 1
+        ;;
+esac
+
+bad=$(printf '%s\n' "$hits" | grep -v -P "$good" || true)
+
+if [ -n "$bad" ]; then
+    printf '%s\n' "$bad" >&2
+    echo "suppression-scan: each line above suppresses a lint without naming a rule, without giving a reason, or both. Write it as '-- <why>' after the rule name, or remove the suppression." >&2
+    exit 1
+fi
+
+echo "suppression-scan: every lint suppression names a rule and carries a reason:"
+printf '%s\n' "$hits"

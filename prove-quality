@@ -1,0 +1,282 @@
+#!/bin/sh
+# The formatter and the lint gate, shown to bite.
+#
+# A gate that has never refused anything is a claim, not a control, and the
+# cheapest way for one to stop working is for it to keep passing. Every leg here
+# runs the shipped command or the shipped script against a fixture and reads the
+# exit code; none of them re-implements a rule, so a rule loosened where it
+# lives is loosened here too and the leg that depended on it goes red.
+#
+# Run from anywhere:
+#
+#     ./prove-quality
+#
+# It needs the Rust toolchain and the client workspace, which
+# `npm ci --prefix client` installs.
+#
+# Where the fixtures are, and why they are not all in one place.
+#
+# The Rust ones are tracked, under server/fixtures/. The lint fixture has to be
+# a workspace member, because `[lints] workspace = true` is what makes it judged
+# by the levels server/Cargo.toml sets rather than by a copy of them, and every
+# arm that must be refused is behind a feature that is off so no other run sees
+# it. The format fixtures are tracked because a badly indented file that nothing
+# compiles is harmless to carry, and reading it in the diff is worth more than
+# building it here.
+#
+# The client ones are built at run time, the way client/prove-gates builds its
+# escape cases and for the same reason: a tracked file carrying an unreasoned
+# suppression is exactly what the scan refuses, so committing one would redden
+# the real run for the sake of proving that it can.
+#
+# POSIX sh, matching ./build, because the legs are exit codes from other
+# programs and nothing here needs a language that can do more than run one and
+# read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "prove-quality: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+for tool in prettier oxlint; do
+    if [ ! -x "client/node_modules/.bin/$tool" ]; then
+        echo "prove-quality: client/node_modules/.bin/$tool is not there. Run 'npm ci --prefix client' first." >&2
+        exit 1
+    fi
+done
+prettier=client/node_modules/.bin/prettier
+oxlint=client/node_modules/.bin/oxlint
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+# Expect a command to succeed.
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (exit $?, and it was supposed to pass)"
+    fi
+}
+
+# Expect a command to fail. A gate that cannot say no is the thing this script
+# exists to catch, so the message says which way round the leg was.
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+echo "prove-quality: the server formatter"
+
+# rustfmt rather than `cargo fmt`, because the fixtures are deliberately not a
+# crate. --config-path names the shipped file, so a deviation removed there is
+# removed here.
+rustfmt_shipped() {
+    rustfmt --check --edition 2024 --config-path server/rustfmt.toml "$@"
+}
+
+expect_red "a badly indented file is refused" \
+    rustfmt_shipped server/fixtures/format/unformatted.rs
+
+expect_green "its formatted neighbour passes under the same configuration" \
+    rustfmt_shipped server/fixtures/format/formatted.rs
+
+# The deviation server/rustfmt.toml carries, proved the way the type gate's
+# fixture proves noUncheckedIndexedAccess: the same bytes, with the one setting
+# put back to its default, are accepted. Built here rather than tracked because
+# ./text-scan refuses a carriage return in tracked text, which is the rule this
+# leg exists to keep the formatter agreeing with.
+crlf=$(mktemp -d)
+sed 's/$/\r/' server/fixtures/format/formatted.rs > "$crlf/formatted.rs"
+
+expect_red "the same file with carriage returns is refused" \
+    rustfmt_shipped "$crlf/formatted.rs"
+
+expect_green "and is accepted with newline_style back at its default" \
+    rustfmt --check --edition 2024 --config-path server/rustfmt.toml \
+    --config newline_style=Auto "$crlf/formatted.rs"
+
+rm -rf "$crlf"
+
+echo "prove-quality: the server lint gate"
+
+clippy_fixture() {
+    cargo clippy --quiet --manifest-path server/Cargo.toml -p kontor-lint-fixture "$@"
+}
+
+# The leg that says the gate is not one that refuses everything put in front of
+# it: with no arm asked for, the crate holds the one-change neighbour of each
+# arm and is clean.
+expect_green "the fixture crate with no arm asked for is clean" \
+    clippy_fixture
+
+expect_red "an unwrap is refused" \
+    clippy_fixture --features unwrap
+
+# The leg that says the refusal above belongs to clippy::unwrap_used rather than
+# to some other lint that happens to reject the same file.
+expect_green "the same arm passes with clippy::unwrap_used allowed" \
+    clippy_fixture --features unwrap -- --allow clippy::unwrap_used
+
+expect_red "a warning that no lint setting names is fatal" \
+    clippy_fixture --features warning
+
+expect_green "the same arm passes with that warning allowed" \
+    clippy_fixture --features warning -- --allow unused_variables
+
+expect_red "a suppression carrying no reason is refused" \
+    clippy_fixture --features suppression
+
+expect_green "the same arm passes with clippy::allow_attributes_without_reason allowed" \
+    clippy_fixture --features suppression -- --allow clippy::allow_attributes_without_reason
+
+echo "prove-quality: the client formatter and lint gate"
+
+# One throwaway file per case, judged by the shipped configuration files rather
+# than by a copy of their settings.
+client_case() {
+    what=$1
+    body=$2
+    expectation=$3
+    tool=$4
+
+    tmp=$(mktemp -d)
+    printf '%s' "$body" > "$tmp/case.ts"
+
+    case "$tool" in
+        prettier) set -- "$root/$prettier" --config client/.prettierrc.yml --check "$tmp/case.ts" ;;
+        oxlint) set -- "$root/$oxlint" --config client/.oxlintrc.json --deny-warnings "$tmp/case.ts" ;;
+    esac
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" "$@"
+    else
+        expect_green "$what" "$@"
+    fi
+
+    rm -rf "$tmp"
+}
+
+formatted='export function total(values: readonly number[]): number {
+  let sum = 0;
+  for (const value of values) {
+    sum += value;
+  }
+  return sum;
+}
+'
+unformatted='export function total(values:readonly number[]):number{let sum=0
+for(const value of values){sum+=value}
+   return sum}
+'
+
+client_case "a badly formatted file is refused" "$unformatted" red prettier
+client_case "its formatted neighbour passes under the same configuration" "$formatted" green prettier
+
+client_case "a lint violation is refused" \
+    'export function trace(value: string): string {
+  debugger;
+  return value.trim();
+}
+' red oxlint
+
+client_case "its neighbour with the violation removed passes" \
+    'export function trace(value: string): string {
+  return value.trim();
+}
+' green oxlint
+
+echo "prove-quality: the suppression scan"
+
+# THE LEG THAT SAYS WHY THE SCAN EXISTS. The same violation, with a blanket
+# suppression above it, is accepted by the linter without a word. Nothing in
+# .oxlintrc.json can refuse that, which is the whole reason the rule about
+# suppressions lives in client/suppression-scan and not in the configuration.
+# If this leg ever goes red the linter has grown the ability, and the scan
+# should be reconsidered rather than kept out of habit.
+client_case "the linter honours a blanket suppression silently" \
+    'export function trace(value: string): string {
+  /* oxlint-disable */
+  debugger;
+  return value.trim();
+}
+' green oxlint
+
+# Each case is a throwaway repository holding one client source file, because
+# the scan reads tracked files through git and nothing else.
+suppression_case() {
+    what=$1
+    line=$2
+    expectation=$3
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/client/packages/app/src"
+    {
+        echo "export function trace(value: string): string {"
+        echo "  $line"
+        echo "  return value.trim();"
+        echo "}"
+    } > "$tmp/client/packages/app/src/fixture.ts"
+    # core.autocrlf off, so the case is judged on the bytes written above
+    # whatever this machine's git is configured to do to them.
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    git -C "$tmp" add -A
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh -c "cd \"$tmp\" && sh \"$root/client/suppression-scan\""
+    else
+        expect_green "$what" sh -c "cd \"$tmp\" && sh \"$root/client/suppression-scan\""
+    fi
+
+    rm -rf "$tmp"
+}
+
+suppression_case "a suppression naming no rule is refused" \
+    '// oxlint-disable-next-line' red
+
+suppression_case "a suppression naming a rule and giving no reason is refused" \
+    '// oxlint-disable-next-line no-debugger' red
+
+# The near miss. Somebody who has read the rule and typed the marker without
+# saying anything after it has satisfied the letter of it, and a scan reading
+# only the marker would pass this line.
+suppression_case "a reason marker with nothing after it is refused as an absent one" \
+    '// oxlint-disable-next-line no-debugger --' red
+
+# The other spelling. The linter honours both, so a rule covering one of them is
+# a rule somebody satisfies by typing the other.
+suppression_case "the eslint spelling of the directive is read too" \
+    '// eslint-disable-next-line no-debugger' red
+
+suppression_case "a suppression naming a rule and carrying a reason is accepted" \
+    '// oxlint-disable-next-line no-debugger -- the step is walked by hand during a release' green
+
+suppression_case "source with no suppression is accepted" \
+    'const trimmed = value;' green
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-quality: a leg above did not do what it says. The gate it belongs to is not proven." >&2
+    exit 1
+fi
+
+echo "prove-quality: every leg did what it says."

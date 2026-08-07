@@ -1,0 +1,25 @@
+# How the client is formatted. Every prettier default is taken, so this file
+# holds no setting at all, and that is the statement it is here to make rather
+# than an omission.
+#
+# Two reasons it exists while holding nothing.
+#
+# It ends the search. Prettier walks up from each file until it finds a
+# configuration, and with nothing in this workspace it would keep walking past
+# the repository root into whatever a contributor happens to have in a parent
+# directory or in their home directory. A file here means every clone formats
+# this workspace the same way, which is the whole point of having a formatter.
+#
+# It is where a deviation would go. A setting added later carries the reason it
+# was added on the line above it, and a setting with no reason above it is the
+# thing to argue with in review. An absent file gives a later contributor
+# nowhere to write the reason and no signal that one is expected.
+#
+# What prettier was asked for is readable rather than remembered:
+#
+#     npm exec --prefix client -- prettier --find-config-path packages/app/src/main.ts
+#     npm exec --prefix client -- prettier --support-info
+#
+# Line endings are not set here. Prettier's default is already LF, which is what
+# .gitattributes fixes and what ./text-scan refuses a breach of, so a line here
+# would restate a default and a rule at once.

@@ -1,0 +1,90 @@
+#!/bin/sh
+# The formatter, over both layers.
+#
+#     ./format                 format the whole tree
+#     ./format --check         say whether it is formatted, and write nothing
+#     ./format --check server  one layer, which is what a workflow job runs
+#     ./format --check client
+#
+# Two commands rather than one with a flag nobody remembers: the first is what a
+# contributor runs before pushing, the second is what the workflow runs, and the
+# second writes nothing so a job that could not push cannot silently fix the
+# thing it was asked to judge.
+#
+# Formatting arguments are a tax on every later review, and the way to stop
+# paying it is to remove the argument rather than to win it. Both toolchains
+# have a formatter with a defensible default and the default is what is taken.
+# Where a default is not taken, the deviation sits in that layer's configuration
+# file with the reason on the line above it: server/rustfmt.toml and
+# client/.prettierrc.yml are the two, and this script holds no formatting
+# opinion of its own.
+#
+# POSIX sh, matching ./build, and for the same reason: this runs the toolchains'
+# own verbs in order and adds no rules of its own. Anything it decided would be
+# a rule stated in a place neither formatter reads.
+#
+# ./prove-quality is what shows both halves bite.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+check=no
+if [ "${1-}" = "--check" ]; then
+    check=yes
+    shift
+fi
+
+layer=${1-both}
+case "$layer" in
+    server | client | both) ;;
+    *)
+        echo "format: '$layer' is not a layer. Use server, client, or nothing for both." >&2
+        exit 1
+        ;;
+esac
+
+# cargo fmt reaches the workspace members and nothing else, so the fixtures
+# under server/fixtures/format are never rewritten by it: they are not a crate,
+# and ./prove-quality points rustfmt at them directly.
+format_server() {
+    if [ "$check" = yes ]; then
+        echo "format: server, checking"
+        cargo fmt --manifest-path server/Cargo.toml --all -- --check
+    else
+        echo "format: server, writing"
+        cargo fmt --manifest-path server/Cargo.toml --all
+    fi
+}
+
+# The client half runs through npm rather than through the binary path, so the
+# command in this script and the command in client/package.json cannot come to
+# differ. What prettier reads and what it skips is client/.prettierrc.yml and
+# client/.prettierignore.
+format_client() {
+    if [ ! -x client/node_modules/.bin/prettier ]; then
+        echo "format: the client workspace is not installed. Run 'npm ci --prefix client' first." >&2
+        exit 1
+    fi
+    if [ "$check" = yes ]; then
+        echo "format: client, checking"
+        npm run --silent format:check --prefix client
+    else
+        echo "format: client, writing"
+        npm run --silent format --prefix client
+    fi
+}
+
+case "$layer" in
+    server) format_server ;;
+    client) format_client ;;
+    both)
+        format_server
+        format_client
+        ;;
+esac
+
+if [ "$check" = yes ]; then
+    echo "format: formatted as both formatters want it."
+else
+    echo "format: done. 'git diff' says whether anything moved."
+fi
