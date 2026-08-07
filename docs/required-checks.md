@@ -364,11 +364,15 @@ the first request to lower the floor is recognised as what it is.
 The other twenty three pass all three tests on the evidence available. None is
 proposed as advisory.
 
-## The thing to settle before any of this is applied
+## The thing that had to be settled before any of this is applied
 
-Every workflow in this tree that triggers on `push` does so for every branch and
-also triggers on `pull_request`, so a commit that is both pushed and in a pull
-request is judged twice under each name:
+It is settled, and the state that made it a blocker is kept here rather than
+replaced, because a document that quietly rewrites what it once measured is a
+document nobody can check against.
+
+What it was. Every workflow in this tree that triggered on `push` did so for
+every branch and also triggered on `pull_request`, so a commit that was both
+pushed and in a pull request was judged twice under each name:
 
     S=fb5cf5a42eb1470b1cf620cc12f5008f245ccf00
     gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" --jq '[.check_runs[].name] | length'
@@ -391,11 +395,49 @@ above are ambiguous in exactly this way.
 
 Requiring a context whose name is carried by two runs of two different events is
 a request whose meaning depends on how the platform resolves the duplicate, and
-this document does not know how it resolves it. Reading that behaviour, or
-removing the duplication by deciding which event a gate belongs to, belongs to
-#6, which owns what runs on a pull request. It is named here because applying
-this request before that is settled would be requiring something nobody has
-read, and it is now the larger half of the request rather than a footnote on it.
+this document did not know how it resolves it. Two routes closed that, and only
+one of them was available from inside the tree. Reading the platform's behaviour
+means applying a required check in order to find out what applying it means,
+which is a repository setting rather than a change to any file here. Removing
+the duplication by deciding which event a gate belongs to is the other, it
+belonged to #6, and it is what happened.
+
+What it is now. Six workflows trigger on the pull request event and on a push to
+the default branch alone, which is the shape `zizmor.yml` already had. Read
+against `16b7ac4d24ed89fa7bee9f5dfc8d026ea21dcc24`, the head of the pull request
+that made the change, with the same three calls as above:
+
+    S=16b7ac4d24ed89fa7bee9f5dfc8d026ea21dcc24
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" --jq '[.check_runs[].name] | length'
+    30
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" --jq '[.check_runs[].name] | unique | length'
+    30
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" \
+      --jq '[.check_runs[].name] | group_by(.) | map(select(length > 1)) | length'
+    0
+
+Thirty runs under thirty names, and no name carried by more than one. The third
+call is widened from `length == 2` to `length > 1`, because the old form counted
+exactly the duplication it was written for and would report zero for a name
+carried by three runs as well as for one carried by one.
+
+The set is larger than the twenty five named above, and this document does not
+restate it. Four of the difference are the pull request body checks, and the
+fifth is the code scanning run that section already places outside the requested
+set. Whoever applies the request reads the first command of this document
+against the commit in front of them rather than against either list here.
+
+What this does not settle. Nothing is required of a merge yet, and none of the
+arithmetic above changes that. It removes the reason a reader was given for not
+applying the request, and it leaves the applying to the section below and to the
+sentence at the end of this document, which still says what it says.
+
+One property is given up by the change and is named rather than left for
+somebody to notice. A branch that is pushed and never becomes a pull request is
+no longer judged by these six. What that bought was a verdict on work that
+cannot reach the default branch, since pushing to it is refused by the ruleset
+at the top of this document, and what it cost was every one of those names being
+ambiguous.
 
 ## How a check joins the required set later
 
