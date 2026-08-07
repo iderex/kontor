@@ -1,0 +1,172 @@
+#!/bin/sh
+# Three refusals over the body of a pull request. It reads the body and the
+# tracker, and nothing else: not the diff, not the commits, not the branch.
+#
+# Run from anywhere, against a file holding the body:
+#
+#     pr-body-scan sections  body.txt
+#     pr-body-scan reference body.txt
+#     pr-body-scan resolve   body.txt OWNER/REPO
+#     pr-body-scan           body.txt
+#
+# With no rule it runs the two that need nothing outside this machine and says
+# that the third was not run, because a run that covered two of three rules must
+# not read as one that covered all three and found nothing.
+#
+# WHAT THIS CANNOT JUDGE. That a section is present is a fact about the bytes of
+# the body. Whether what is written under it is true, complete, or even about
+# this change is not, and no reading of a body decides it. Every green verdict
+# below prints that sentence, so a tick is not read as the stronger thing. The
+# reviewer is the whole mechanism for the second half and there is no issue open
+# to change that, because nothing could.
+#
+# The section names are not written here. They are read out of
+# .github/pull_request_template.md, which is the thing that asks for them, so a
+# section added to the template is required from that commit and a list here
+# cannot drift against it.
+#
+# A body arrives from the tracker with CRLF line endings, so every rule reads a
+# copy with the carriage returns removed rather than matching against them.
+#
+# POSIX sh, matching text-scan and client/escape-scan, and for the same reason:
+# every rule here is a question about lines of text plus, for the third, one
+# call to a tool the runner already has. Neither toolchain in this tree would be
+# built before this ran, and a check that decides whether a change is readable
+# should not wait on a compiler.
+#
+# prove-pr-body is what shows this file bites, and it runs this file rather than
+# a copy of its rules.
+set -eu
+
+root=$(CDPATH= cd "$(dirname "$0")" && pwd)
+template="$root/.github/pull_request_template.md"
+
+caveat="pr-body-scan: that a section is present is checkable. Whether what it says is true is not, and this check does not claim it."
+
+body_of() {
+    if [ ! -f "$1" ]; then
+        echo "pr-body-scan: $1 is not a file. The body is passed as a file rather than as an argument, because a body holds newlines and quotes." >&2
+        exit 2
+    fi
+    tr -d '\r' < "$1"
+}
+
+sections() {
+    if [ ! -f "$template" ]; then
+        echo "pr-body-scan: $template is not there, so there is nothing that says which sections are asked for. Failing closed rather than requiring none." >&2
+        return 1
+    fi
+
+    body=$(body_of "$1")
+    wanted=$(sed -n 's/^## //p' "$template")
+
+    if [ -z "$wanted" ]; then
+        echo "pr-body-scan: the template asks for no section, so this rule would refuse nothing. Failing closed rather than passing every body." >&2
+        return 1
+    fi
+
+    missing=0
+    while IFS= read -r heading; do
+        [ -n "$heading" ] || continue
+        if printf '%s\n' "$body" | grep -qxF "## $heading"; then
+            echo "  ok    ## $heading"
+        else
+            echo "  FAIL  ## $heading is missing from the body" >&2
+            missing=1
+        fi
+    done <<EOF
+$wanted
+EOF
+
+    if [ "$missing" -ne 0 ]; then
+        echo "pr-body-scan: the body is missing a section the pull request template asks for, named above. Put the heading back and write under it." >&2
+        return 1
+    fi
+
+    echo "pr-body-scan: every section the template asks for is in the body."
+    echo "$caveat"
+    return 0
+}
+
+references() {
+    printf '%s\n' "$1" | grep -Eo '(Closes|Refs) #[0-9]+' | grep -Eo '[0-9]+' | sort -un
+}
+
+reference() {
+    body=$(body_of "$1")
+    found=$(references "$body")
+
+    if [ -z "$found" ]; then
+        echo "pr-body-scan: the body names no issue. It needs 'Closes #<n>' where this finishes an issue, or 'Refs #<n>' where it does not. A change with no issue behind it has no shape anybody agreed to, and the template's own placeholder carries no number, so a body that was not filled in is refused here." >&2
+        return 1
+    fi
+
+    for n in $found; do
+        echo "  ok    the body names #$n"
+    done
+    echo "pr-body-scan: the body names an issue. Whether it names the right one is not decided here."
+    return 0
+}
+
+resolve() {
+    body=$(body_of "$1")
+    repo=${2-}
+
+    if [ -z "$repo" ]; then
+        echo "pr-body-scan: resolve needs the repository to resolve against, as OWNER/REPO. It is not written into this script, because a name here would be a second place the repository is stated." >&2
+        return 2
+    fi
+
+    command -v gh >/dev/null 2>&1 || {
+        echo "pr-body-scan: gh is not on the path, so a reference cannot be resolved. Failing closed rather than reading an unresolved reference as a resolved one." >&2
+        return 1
+    }
+
+    found=$(references "$body")
+    if [ -z "$found" ]; then
+        echo "pr-body-scan: the body names no issue, so there is nothing to resolve. That is the reference rule's refusal rather than this one's." >&2
+        return 1
+    fi
+
+    bad=0
+    for n in $found; do
+        kind=$(gh api "repos/$repo/issues/$n" --jq 'if .pull_request then "pull request" else "issue" end' 2>/dev/null) || {
+            echo "  FAIL  #$n does not resolve to anything in $repo" >&2
+            bad=1
+            continue
+        }
+        if [ "$kind" = "issue" ]; then
+            echo "  ok    #$n is an issue in $repo"
+        else
+            echo "  FAIL  #$n is a pull request in $repo, not an issue" >&2
+            bad=1
+        fi
+    done
+
+    if [ "$bad" -ne 0 ]; then
+        echo "pr-body-scan: a number above matched the pattern and is not an issue in this repository. A reference that resolves to nothing reads as a link and is not one." >&2
+        return 1
+    fi
+
+    echo "pr-body-scan: every issue the body names is an issue in $repo."
+    return 0
+}
+
+case "${1-}" in
+    sections)  shift; sections "${1-}" ;;
+    reference) shift; reference "${1-}" ;;
+    resolve)   shift; resolve "${1-}" "${2-}" ;;
+    "")
+        echo "pr-body-scan: no body was given. Pass a file holding the pull request body." >&2
+        exit 2
+        ;;
+    *)
+        if [ -f "$1" ]; then
+            sections "$1" && reference "$1"
+            echo "pr-body-scan: resolve was not asked for and did not run. It reaches the tracker, so it needs 'pr-body-scan resolve $1 OWNER/REPO' and a gh that is signed in. Two of the three rules ran."
+        else
+            echo "pr-body-scan: '$1' is neither a rule this scans nor a file. Use sections, reference, resolve, or a body file for the two that need nothing." >&2
+            exit 2
+        fi
+        ;;
+esac

@@ -1,0 +1,113 @@
+# Three refusals over the body of a pull request, and the evidence that they
+# bite. The templates ask for the body; nothing read what came back, so a pull
+# request that deleted the template and said "fixes" passed every route here.
+#
+# Each job runs a script from the tree rather than holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer.
+#
+# The body reaches the script through the environment and never through an
+# expression inside a run: block, because a body is written by whoever opened
+# the pull request and an expression is expanded before the shell sees it.
+name: pr-hygiene
+
+on:
+  # The pull request event only. There is no body on a push, so a push trigger
+  # would report under these names with nothing to judge, and it would leave
+  # every name on this workflow carried by two runs of two events, which is the
+  # ambiguity docs/required-checks.md says has to be settled before a context is
+  # required.
+  #
+  # edited is in the list because the body is the subject: a body corrected
+  # after the refusal has to be judged again, and the default set does not
+  # include that event.
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sections:
+    name: Reject a pull request body missing a section the template asks for
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the body to a file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+
+      - name: Reject a body missing a section the template asks for
+        run: ./pr-body-scan sections "$RUNNER_TEMP/body.md"
+
+  reference:
+    name: Reject a pull request body that names no issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the body to a file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+
+      - name: Reject a body that names no issue
+        run: ./pr-body-scan reference "$RUNNER_TEMP/body.md"
+
+  resolve:
+    name: Reject an issue reference that resolves to nothing
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the body to a file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+
+      - name: Reject a reference that is not an issue in this repository
+        # A number matching the pattern is not a link. This is the job that asks
+        # the tracker whether it points at anything.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./pr-body-scan resolve "$RUNNER_TEMP/body.md" "$GITHUB_REPOSITORY"
+
+  proof:
+    name: Prove the pull request body checks bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg writes a fixture body, runs the shipped scanner
+        # against it, and reads both the exit code and what it printed, so a
+        # rule loosened where it lives reddens the leg that depended on it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./prove-pr-body

@@ -1,0 +1,155 @@
+#!/bin/sh
+# The pull request body checks, shown to bite.
+#
+#     prove-pr-body
+#
+# Each leg writes a fixture body, runs the shipped scanner against it and reads
+# both the exit code and what it printed. Reading only the code would let a leg
+# named for the missing section be satisfied by the missing reference, and the
+# two rules are exactly the pair a body can trip together.
+#
+# The good body is built from .github/pull_request_template.md rather than
+# written out here, so a section added to the template appears in the fixture
+# too and the legs go on meaning what they say.
+#
+# The last pair reaches the tracker. Where it cannot, it is reported as not run
+# rather than skipped quietly, because a run that covered fewer legs must not
+# read as one that covered them all.
+#
+# POSIX sh, matching prove-determinism and client/prove-gates: a leg is an exit
+# code and a string from another program, and nothing here needs a language that
+# can do more than run one and read what came back.
+set -eu
+
+root=$(CDPATH= cd "$(dirname "$0")" && pwd)
+cd "$root"
+
+failed=0
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+headings() { sed -n 's/^## //p' .github/pull_request_template.md; }
+
+# A body that satisfies both offline rules: every heading the template asks for,
+# a sentence under each, and a reference carrying a number.
+write_good_body() {
+    out=$1
+    : > "$out"
+    while IFS= read -r heading; do
+        [ -n "$heading" ] || continue
+        printf '## %s\n\nA sentence that a person would have to read.\n\n' "$heading" >> "$out"
+    done <<EOF
+$(headings)
+EOF
+    printf 'Closes #132\n' >> "$out"
+}
+
+expect_green() {
+    what=$1
+    shift
+    if out=$("$@" 2>&1); then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass). It printed: $out"
+    fi
+}
+
+expect_red_saying() {
+    what=$1
+    saying=$2
+    shift 2
+    if out=$("$@" 2>&1); then
+        fail "$what (it passed, and it was supposed to be refused)"
+        return
+    fi
+    case "$out" in
+        *"$saying"*) pass "$what" ;;
+        *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$saying')" ;;
+    esac
+}
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+good="$tmp/good.md"
+write_good_body "$good"
+
+# The heading the fixture removes is the last one the template asks for, taken
+# from the template rather than named here, so this leg keeps working when the
+# template changes.
+victim=$(headings | tail -n 1)
+grep -vxF "## $victim" "$good" > "$tmp/no-section.md"
+
+grep -vxF 'Closes #132' "$good" > "$tmp/no-reference.md"
+
+cp .github/pull_request_template.md "$tmp/untouched-template.md"
+
+echo "prove-pr-body: the sections rule"
+
+expect_green "a body carrying every section the template asks for is accepted" \
+    sh ./pr-body-scan sections "$good"
+
+expect_red_saying "the same body with one section heading removed is refused, and the heading is named" \
+    "## $victim is missing" \
+    sh ./pr-body-scan sections "$tmp/no-section.md"
+
+# The neighbour that separates the two rules. Without it, the leg above is also
+# satisfied by a scanner that refuses whatever it is handed.
+expect_green "a body with the issue reference removed still satisfies the sections rule" \
+    sh ./pr-body-scan sections "$tmp/no-reference.md"
+
+echo "prove-pr-body: the reference rule"
+
+expect_green "a body carrying Closes and a number is accepted" \
+    sh ./pr-body-scan reference "$good"
+
+expect_red_saying "the same body with the reference removed is refused, for the reference and not for a section" \
+    "the body names no issue" \
+    sh ./pr-body-scan reference "$tmp/no-reference.md"
+
+# The near miss, and the one somebody will actually produce: the template opened
+# and pushed without being filled in. Its placeholder is 'Closes #' with no
+# number, which is one character away from passing a rule that looked for the
+# word alone.
+expect_red_saying "the unedited template, whose placeholder carries no number, is refused" \
+    "the body names no issue" \
+    sh ./pr-body-scan reference "$tmp/untouched-template.md"
+
+echo "prove-pr-body: the same body twice"
+
+# Deterministic is a done condition of the issue this file belongs to, so it is
+# a leg rather than an assertion in a document.
+first=$(sh ./pr-body-scan sections "$good" 2>&1)
+second=$(sh ./pr-body-scan sections "$good" 2>&1)
+if [ "$first" = "$second" ]; then
+    pass "the same body scanned twice prints the same verdict"
+else
+    fail "the same body scanned twice printed two different verdicts"
+fi
+
+echo "prove-pr-body: the resolve rule"
+
+repo=""
+if command -v gh >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+    repo=$(git config --get remote.origin.url 2>/dev/null | sed -e 's|.*github\.com[:/]||' -e 's|\.git$||') || repo=""
+fi
+
+if [ -z "$repo" ]; then
+    echo "  not run  the resolve legs need gh and an origin remote naming a repository, and one of the two is missing here. The rule is not proven by this run."
+else
+    printf 'Closes #999999999\n' > "$tmp/absent.md"
+
+    expect_red_saying "a reference to a number that is not an issue in $repo is refused" \
+        "does not resolve to anything" \
+        sh ./pr-body-scan resolve "$tmp/absent.md" "$repo"
+
+    expect_green "a reference to an issue that is there is accepted" \
+        sh ./pr-body-scan resolve "$good" "$repo"
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-pr-body: a leg above did not do what it says. The gate it belongs to is not proven." >&2
+    exit 1
+fi
+
+echo "prove-pr-body: every leg did what it says."

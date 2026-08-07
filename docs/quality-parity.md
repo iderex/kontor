@@ -70,10 +70,23 @@ readable in the tree:
 #9 states the requirement in the contributor guide, which the gate's own error
 message already points at.
 
-`Deterministic PR-hygiene checks`. Not matched. #12 adds the templates, which is
-the prompting half; nothing here reads what comes back. #132 delivers the check,
-and it was opened by this map. It is deliberately narrow: a check can refuse an
-absent section and cannot judge whether what was written is true.
+`Deterministic PR-hygiene checks`. Matched by #132, which this map opened, and
+which is now in the tree. #12 added the templates, which is the prompting half;
+what reads the answer is `pr-body-scan`, under four names rather than one,
+because the target's single context covers three refusals and their proof and
+this tree gives each its own sentence:
+
+    git grep -n '    name: ' -- .github/workflows/pr-hygiene.yml
+    .github/workflows/pr-hygiene.yml:37:    name: Reject a pull request body missing a section the template asks for
+    .github/workflows/pr-hygiene.yml:54:    name: Reject a pull request body that names no issue
+    .github/workflows/pr-hygiene.yml:71:    name: Reject an issue reference that resolves to nothing
+    .github/workflows/pr-hygiene.yml:95:    name: Prove the pull request body checks bite
+
+It stays deliberately narrow, and the narrowness is in the check's own output
+rather than only here: a body either carries a section or it does not, which is
+checkable, and whether what is written under it is true is not. The scanner
+prints that sentence on every green verdict so a tick cannot be read as the
+stronger claim.
 
 `Enforce greppable invariants`. Matched by #113. The invariant vocabulary differs,
 because the shapes worth grepping for here are the ones the architecture rules
