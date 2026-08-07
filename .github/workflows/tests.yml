@@ -42,6 +42,45 @@ jobs:
         # job is where it goes red.
         run: ./test
 
+  unit-sealed:
+    name: Run the unit suite where there is nothing to reach
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run the unit suite where there is nothing to reach
+        # The job above runs the suite on a runner that happens to have no
+        # display and happens not to be root. This one runs it where those are
+        # facts of the environment rather than of the runner image: the script
+        # puts the suite in a network namespace of its own and refuses to report
+        # unless the kernel agrees that it is in one.
+        run: ./test-sealed
+
+  sealed-proof:
+    name: Prove the seal bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # Each leg runs one command on both sides of the seal, so a seal that
+        # stopped sealing reddens the inside half rather than passing quietly.
+        run: ./prove-sealed
+
   marking:
     name: Reject a test that reaches for what the default suite cannot give it
     runs-on: ubuntu-latest

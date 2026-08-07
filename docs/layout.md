@@ -28,12 +28,14 @@ tree holds today is smaller, and reading it is one command:
     prove-determinism
     prove-headless
     prove-quality
+    prove-sealed
     regenerate
     rust-toolchain.toml
     server
     test
     test-needs-a-database
     test-scan
+    test-sealed
     text-scan
 
 `server/` and `client/` are there since #2, holding workspaces that compile and
@@ -137,6 +139,20 @@ workspace per case and says the scan still bites. `coverage` runs the first
 suite under instrumentation and refuses below a floor that is a measurement
 rather than a target, with the run that produced it in a comment beside the
 number.
+
+`test-sealed` and `prove-sealed` sit beside them and are the other direction.
+Everything above judges the source of a test; these two judge the environment it
+runs in. The first puts the suite in a network namespace of its own, where the
+only interface is a loopback that is down and there is no route out of it, built
+with privilege and entered with less than the run that started it, and it reads
+`/proc` before it starts rather than trusting the commands that were meant to
+make it that way. It compiles outside the seal and runs inside it offline, because the
+registry is on the far side and the claim is about the suite rather than about a
+cold clone. The second is a set of pairs: each leg runs one command on each side
+of the seal and reads both exit codes, so a seal that stopped sealing reddens
+the inside half instead of leaving a green run that means nothing. Both are
+Linux only, and both say so and stop rather than passing where the mechanism
+they depend on does not exist.
 
 `text-scan`, `regenerate` and `prove-determinism` sit beside it at the root, for
 the reason the top of this note gives: a contributor runs them, and a rule

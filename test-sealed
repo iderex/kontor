@@ -1,0 +1,144 @@
+#!/bin/sh
+# The unit suite, in an environment that has none of what a unit test may not
+# need, rather than in one that merely happens to have nothing.
+#
+#     ./test-sealed
+#
+# ./test states the rule and ./test-scan refuses a test whose source reaches
+# past it. Both judge the source. This judges the environment. The suite runs
+# inside a network namespace of its own, where the only interface is a loopback
+# that is down and there is no route out of it, as an ordinary user who cannot
+# become root for as long as the seal holds. A test that quietly needs an
+# outbound socket goes red here even when its source says nothing the register
+# in ./test-scan knows how to refuse.
+#
+# WHY A NAMESPACE RATHER THAN A FIREWALL RULE. A rule that drops outbound
+# traffic in a workflow job drops the job's own connection to the service
+# watching it, so the job dies instead of reporting, and the verdict is lost
+# rather than red. A namespace is around this process alone, and everything
+# outside it keeps the network it had.
+#
+# WHY ROOT BUILDS IT AND THE SUITE DOES NOT RUN AS ROOT. A network namespace
+# without a user namespace needs privilege to create, so the box is built with
+# some and entered with less: setpriv drops back to the invoking user, empties
+# the supplementary groups and sets no_new_privs before the suite starts, and
+# the far side reads all three back out of /proc rather than trusting the
+# command that was meant to set them. The suite therefore runs with strictly
+# less than the job that started it, which is the direction that matters.
+#
+# The unprivileged route was tried first and refused by the machine rather than
+# by a preference. `unshare --user --map-current-user --net` creates the user
+# namespace and then cannot write the mapping it needs:
+#
+#     unshare: write failed /proc/self/uid_map: Operation not permitted
+#
+# which is what an Ubuntu kernel restricting unprivileged user namespaces
+# answers. It is the environment's answer and not this repository's, so a route
+# that depends on it would be a gate that works until an image changes.
+#
+# WHY THE COMPILER RUNS OUTSIDE THE SEAL. This workspace has dependencies and
+# the registry is on the far side of the seal, so the fetch and the compile
+# happen first and the seal is handed a tree with nothing left to fetch. What is
+# claimed here is that the SUITE reaches for nothing, and not that a cold clone
+# compiles without a network. `--offline` inside is what makes a fetch that was
+# missed a refusal rather than a hang.
+#
+# WHAT THE SEAL DOES NOT REMOVE. A display server reached through a path on the
+# filesystem is still reachable from inside a network namespace, so this script
+# refuses to start when one is named rather than pretending the seal took it
+# away. ./prove-sealed has the leg that shows the refusal.
+#
+# ./prove-sealed is the evidence that the seal is real, and it gets it by running
+# one command on each side of it rather than by reading this comment.
+#
+# POSIX sh, matching ./test, because the whole of this is one process launched
+# under another and it adds no test rules of its own.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+# The far side. The outer run re-enters this file rather than writing a second
+# one, so what is claimed about the seal and what runs inside it cannot drift
+# apart.
+if [ "${1-}" = "--inside" ]; then
+    # The seal is read rather than assumed. `unshare` reporting success and
+    # leaving this process on the host's network is the case that matters: the
+    # suite would pass, the run would be green, and the green would mean
+    # nothing. /proc/net is the kernel's own answer to which network this
+    # process is on.
+    others=$(sed -n '3,$s/^ *\([^:]*\):.*/\1/p' /proc/net/dev | grep -v '^lo$' || true)
+    if [ -n "$others" ]; then
+        echo "test-sealed: inside the seal there is an interface besides loopback, so this is not a namespace of its own: $others" >&2
+        exit 1
+    fi
+
+    routes=$(sed -n '2,$p' /proc/net/route | grep -c . || true)
+    if [ "$routes" -ne 0 ]; then
+        echo "test-sealed: inside the seal there are $routes route(s), and a sealed suite has nowhere to send a packet." >&2
+        exit 1
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "test-sealed: inside the seal this is running as root, and the suite is meant to run without administrative rights." >&2
+        exit 1
+    fi
+
+    # The other half of that. Dropping back to an ordinary user is undone by any
+    # setuid binary on the path, so the seal also sets the flag that refuses
+    # one, and the flag is read here rather than assumed from the command that
+    # was supposed to set it.
+    if ! grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status; then
+        echo "test-sealed: inside the seal no_new_privs is not set, so a setuid binary is still a way back to root." >&2
+        exit 1
+    fi
+
+    echo "test-sealed: inside. One interface, loopback, down, no route from it, and no way back to root."
+
+    # CARGO_NET_OFFLINE as well as the flag, because the flag covers the cargo
+    # this line runs and the variable covers anything that run starts.
+    CARGO_NET_OFFLINE=true
+    export CARGO_NET_OFFLINE
+    ./test --offline
+    exit 0
+fi
+
+for tool in unshare setpriv; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "test-sealed: $tool is not on the path, so no seal can be built here and this command will not report on one it did not build. Both are Linux commands; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+        exit 1
+    }
+done
+
+# -n so this never asks for anything. A command that stops on a password prompt
+# in a workflow job is a job that times out rather than one that reports, and on
+# a contributor's machine it is an interruption they did not agree to.
+sudo -n true >/dev/null 2>&1 || {
+    echo "test-sealed: there is no password-free route to root here, and building the namespace needs one. The reason is in the comment at the top of this file; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+    exit 1
+}
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "test-sealed: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+if [ -n "${DISPLAY-}" ] || [ -n "${WAYLAND_DISPLAY-}" ]; then
+    echo "test-sealed: DISPLAY or WAYLAND_DISPLAY names a display server, and a network namespace does not take away one reached through a path on the filesystem. Unset both and run again, rather than reading a green run as a suite that had none." >&2
+    exit 1
+fi
+
+echo "test-sealed: fetching and compiling outside the seal, because the registry is on the far side of it"
+cargo test --manifest-path server/Cargo.toml --workspace --locked --no-run
+
+echo "test-sealed: entering a network namespace of this process's own"
+# Root builds the box and the suite runs inside it with less than this script
+# had. setpriv drops back to the invoking user and group, empties the
+# supplementary groups, and sets no_new_privs, which is what stops a setuid
+# binary inside the box from being a way back out of the part that was dropped.
+# env because sudo resets the environment and secure_path replaces PATH, and
+# rustup's shims and node both live on the PATH this was called with.
+sudo -n unshare --net -- \
+    setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- \
+    /usr/bin/env "PATH=$PATH" "HOME=$HOME" "$(pwd)/test-sealed" --inside
+
+echo "test-sealed: green, and the environment it was green in had nothing to reach."

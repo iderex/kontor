@@ -1,0 +1,262 @@
+#!/bin/sh
+# The seal, shown to be real.
+#
+#     ./prove-sealed
+#
+# ./test-sealed claims that the suite ran where there was nothing to reach. A
+# claim like that fails silently in the direction that looks green: a seal that
+# was never built leaves the suite on the host's network, every test passes, and
+# the run says exactly what a sealed run says. So every leg here runs ONE command
+# on BOTH sides of the seal and reads the two exit codes. A leg is a pair, and a
+# seal that stopped sealing reddens the inside half while the outside half goes
+# on passing, which is what tells the two apart.
+#
+# The last pair is the one that matters most, because it is a test rather than a
+# probe: a cargo test target that opens a socket, run on both sides. It passes
+# outside and it is red inside. That is the sentence ./test-sealed exists to make
+# true, made by a test rather than by this comment.
+#
+# THE LISTENER IS ON THIS MACHINE AND NOT ON THE INTERNET. Reaching a public host
+# would make the legs depend on somebody else's uptime and would send traffic
+# from a test run, so the reachable thing is a socket this script opens on the
+# machine's own loopback. A namespace of its own has a loopback of its own, so
+# the host's is unreachable from inside for the same reason everything else is,
+# and the pair proves it without a packet leaving the machine.
+#
+# The fixtures are built rather than tracked, matching ./prove-headless: a
+# tracked test target that opens a socket unmarked is exactly what ./test-scan
+# refuses, so committing one would redden the real run for the sake of proving
+# something here.
+#
+# POSIX sh, matching ./prove-headless, because the legs are exit codes from other
+# programs, with the socket work handed to the one runtime this tree pins.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+
+for tool in unshare setpriv; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "prove-sealed: $tool is not on the path, so there is no seal here to prove anything about. Both are Linux commands; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+        exit 1
+    }
+done
+sudo -n true >/dev/null 2>&1 || {
+    echo "prove-sealed: there is no password-free route to root here, and building the namespace needs one. ./test-sealed says why at the top of itself." >&2
+    exit 1
+}
+command -v cargo >/dev/null 2>&1 || {
+    echo "prove-sealed: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+command -v node >/dev/null 2>&1 || {
+    echo "prove-sealed: node is not on the path, and it is what opens the sockets here. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+# The same construction ./test-sealed uses, and it is repeated here rather than
+# called because what is being proven is the box and not that script. A change
+# to one that is not made to the other shows up as a pair that stops agreeing.
+seal() {
+    sudo -n unshare --net -- \
+        setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- \
+        /usr/bin/env "PATH=$PATH" "HOME=$HOME" "$@"
+}
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass)"
+    fi
+}
+
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and the seal was supposed to refuse it)"
+    else
+        pass "$what"
+    fi
+}
+
+echo "prove-sealed: the seal exists"
+
+# Before any pair means anything. Every other leg below reads an exit code from
+# inside the seal, and a seal that cannot be built at all makes each of those
+# red for a reason that has nothing to do with what the leg is about.
+if seal true >/dev/null 2>&1; then
+    pass "a command can be put in a network namespace of its own, as this user, with no way back to root"
+else
+    fail "the seal could not be built on this machine, so no leg below reports on one"
+    echo "prove-sealed: the seal could not be built. Nothing here is evidence." >&2
+    exit 1
+fi
+
+# Root builds the box, so this is the leg that says root does not run in it.
+inside_uid=$(seal id -u 2>/dev/null || true)
+if [ "$inside_uid" = "$(id -u)" ]; then
+    pass "the seal runs its command as this user rather than as the root that built it"
+else
+    fail "the seal ran its command as uid '$inside_uid' and this user is $(id -u)"
+fi
+
+expect_green "no_new_privs is set inside the seal" \
+    seal grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status
+expect_red "and it is not set outside it, so that leg is about the seal and not about this machine" \
+    grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status
+
+echo "prove-sealed: what the kernel says the two sides are on"
+
+expect_green "outside the seal this machine has an interface besides loopback" \
+    sh -c 'sed -n "3,\$s/^ *\([^:]*\):.*/\1/p" /proc/net/dev | grep -qv "^lo\$"'
+expect_red "inside the seal it has none" \
+    seal sh -c 'sed -n "3,\$s/^ *\([^:]*\):.*/\1/p" /proc/net/dev | grep -qv "^lo\$"'
+
+expect_green "outside the seal there is a route to send a packet down" \
+    sh -c 'sed -n "2,\$p" /proc/net/route | grep -q .'
+expect_red "inside the seal there is no route at all" \
+    seal sh -c 'sed -n "2,\$p" /proc/net/route | grep -q .'
+
+echo "prove-sealed: a socket on this machine, from both sides"
+
+tmp=$(mktemp -d)
+port_file=$tmp/port
+listener=
+
+stop_listener() {
+    if [ -n "$listener" ]; then
+        kill "$listener" 2>/dev/null || true
+        wait "$listener" 2>/dev/null || true
+    fi
+    rm -rf "$tmp"
+}
+trap stop_listener EXIT INT TERM
+
+# Port zero, so the kernel picks one that is free rather than this script
+# guessing at one and failing on the machine where something else holds it.
+node -e '
+const net = require("net");
+const fs = require("fs");
+const server = net.createServer((socket) => socket.end());
+server.listen(0, "127.0.0.1", () => {
+  fs.writeFileSync(process.argv[1], String(server.address().port));
+});
+' "$port_file" &
+listener=$!
+
+waited=0
+while [ ! -s "$port_file" ]; do
+    waited=$((waited + 1))
+    if [ "$waited" -gt 15 ]; then
+        echo "prove-sealed: the listener did not come up, so the pair below would report on nothing." >&2
+        exit 1
+    fi
+    sleep 1
+done
+port=$(cat "$port_file")
+
+reach_the_listener="node -e '
+const net = require(\"net\");
+const socket = net.connect(Number(process.argv[1]), \"127.0.0.1\");
+socket.on(\"connect\", () => { socket.end(); process.exit(0); });
+socket.on(\"error\", () => process.exit(1));
+socket.setTimeout(5000, () => process.exit(1));
+' $port"
+
+expect_green "outside the seal the listener on this machine is reachable" \
+    sh -c "$reach_the_listener"
+expect_red "inside the seal it is not, because the loopback in there is a different one" \
+    seal sh -c "$reach_the_listener"
+
+echo "prove-sealed: the way back to root"
+
+# The third of the three things the suite is not allowed to have, and the pair
+# that carries the most weight, because this machine does have a way back to
+# root and the box is built with it. no_new_privs is what makes the setuid
+# binary that route runs through refuse to elevate.
+expect_green "outside the seal this machine has a way back to root" \
+    sudo -n true
+expect_red "inside the seal the same command cannot take it" \
+    seal sudo -n true
+
+echo "prove-sealed: the display the seal does not take away"
+
+# The one of the four a network namespace leaves alone, and the reason
+# ./test-sealed refuses rather than tolerates. The output is read and not only
+# the exit code, because that script exits non-zero for several reasons and a
+# leg that accepted any of them would pass on a machine with no unshare.
+display_says=$(DISPLAY=:0 sh "$root/test-sealed" 2>&1 || true)
+if printf '%s' "$display_says" | grep -q 'names a display server'; then
+    pass "./test-sealed refuses to start when a display is named, and says that is why"
+else
+    fail "./test-sealed did not refuse a named display for the reason it says it does"
+fi
+
+echo "prove-sealed: a test, rather than a probe"
+
+# The end to end pair. Everything above is this script asking the kernel
+# questions; this is a cargo test target doing what a test that quietly needed
+# the network would do. It has no dependencies, so nothing here needs the
+# registry, and it is compiled once outside the seal because the seal is not
+# where a compiler belongs.
+probe=$tmp/probe
+mkdir -p "$probe/src" "$probe/tests"
+# Edition 2021 rather than the 2024 the server workspace takes. This crate sits
+# outside the tree, where /rust-toolchain.toml is not what rustup applies, so it
+# is written for the oldest compiler that could plausibly run it rather than for
+# the pinned one.
+cat > "$probe/Cargo.toml" <<'EOF'
+[package]
+name = "probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+EOF
+echo '' > "$probe/src/lib.rs"
+cat > "$probe/tests/probe.rs" <<'EOF'
+use std::net::TcpStream;
+
+// The shape of a test that needs an outbound socket and does not say so. What
+// makes it pass on one side of the seal and fail on the other is the
+// environment and nothing about this file.
+#[test]
+fn it_reaches_the_listener() {
+    let port = std::env::var("KONTOR_SEAL_PROBE_PORT").expect("the prover sets the port");
+    TcpStream::connect(format!("127.0.0.1:{port}")).expect("the listener is reachable");
+}
+EOF
+
+KONTOR_SEAL_PROBE_PORT=$port
+export KONTOR_SEAL_PROBE_PORT
+
+if cargo test --manifest-path "$probe/Cargo.toml" --offline --no-run >/dev/null 2>&1; then
+    expect_green "a test that opens an outbound socket passes outside the seal" \
+        cargo test --manifest-path "$probe/Cargo.toml" --offline
+    expect_red "the same test, the same binary, is red inside the seal" \
+        seal cargo test --manifest-path "$probe/Cargo.toml" --offline
+else
+    fail "the probe crate did not compile, so the pair that matters most reported on nothing"
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-sealed: a leg above did not do what it says. The seal is not proven." >&2
+    exit 1
+fi
+
+echo "prove-sealed: every leg did what it says, on both sides."
