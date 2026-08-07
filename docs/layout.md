@@ -143,9 +143,10 @@ number.
 `test-sealed` and `prove-sealed` sit beside them and are the other direction.
 Everything above judges the source of a test; these two judge the environment it
 runs in. The first puts the suite in a network namespace of its own, where the
-only interface is a loopback that is down and there is no route out of it, and
-reads `/proc/net` before it starts rather than trusting that the namespace was
-made. It compiles outside the seal and runs inside it offline, because the
+only interface is a loopback that is down and there is no route out of it, built
+with privilege and entered with less than the run that started it, and it reads
+`/proc` before it starts rather than trusting the commands that were meant to
+make it that way. It compiles outside the seal and runs inside it offline, because the
 registry is on the far side and the claim is about the suite rather than about a
 cold clone. The second is a set of pairs: each leg runs one command on each side
 of the seal and reads both exit codes, so a seal that stopped sealing reddens

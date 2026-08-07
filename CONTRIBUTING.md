@@ -172,13 +172,20 @@ the evidence that it is doing anything:
 
 `./test-sealed` runs the same suite inside a network namespace of its own, where
 the only interface is a loopback that is down, there is no route out of it, and
-the user cannot become root while the seal holds. It reads `/proc/net` before it
-starts the suite and refuses rather than reporting on a seal it did not get, so
-a green run is a statement about the environment and not only about the tests.
+the user cannot become root while the seal holds. Root builds the box and the
+suite runs inside it with strictly less than the run that started it: the user
+and group are dropped back to the caller's, the supplementary groups are
+emptied, and `no_new_privs` is set so the setuid binary that root was reached
+through refuses to elevate. All of that is read back out of `/proc` before the
+suite starts, and the script refuses rather than reporting on a seal it did not
+get, so a green run is a statement about the environment and not only about the
+tests.
+
 It compiles outside the seal and runs inside it with `--offline`, because the
 claim is that the suite reaches for nothing rather than that a cold clone builds
-without a registry. It is Linux only, and it says so and stops rather than
-passing on a machine where `unshare` does not exist.
+without a registry. It is Linux only, it needs a password-free route to root to
+build the namespace, and it says so and stops rather than passing where either
+is missing.
 
 A display server is the one of the four a network namespace leaves alone, since
 one reached through a path on the filesystem is still there inside. `./test-sealed`

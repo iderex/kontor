@@ -18,6 +18,24 @@
 # rather than red. A namespace is around this process alone, and everything
 # outside it keeps the network it had.
 #
+# WHY ROOT BUILDS IT AND THE SUITE DOES NOT RUN AS ROOT. A network namespace
+# without a user namespace needs privilege to create, so the box is built with
+# some and entered with less: setpriv drops back to the invoking user, empties
+# the supplementary groups and sets no_new_privs before the suite starts, and
+# the far side reads all three back out of /proc rather than trusting the
+# command that was meant to set them. The suite therefore runs with strictly
+# less than the job that started it, which is the direction that matters.
+#
+# The unprivileged route was tried first and refused by the machine rather than
+# by a preference. `unshare --user --map-current-user --net` creates the user
+# namespace and then cannot write the mapping it needs:
+#
+#     unshare: write failed /proc/self/uid_map: Operation not permitted
+#
+# which is what an Ubuntu kernel restricting unprivileged user namespaces
+# answers. It is the environment's answer and not this repository's, so a route
+# that depends on it would be a gate that works until an image changes.
+#
 # WHY THE COMPILER RUNS OUTSIDE THE SEAL. This workspace has dependencies and
 # the registry is on the far side of the seal, so the fetch and the compile
 # happen first and the seal is handed a tree with nothing left to fetch. What is
@@ -65,7 +83,16 @@ if [ "${1-}" = "--inside" ]; then
         exit 1
     fi
 
-    echo "test-sealed: inside. One interface, loopback, down, and no route from it."
+    # The other half of that. Dropping back to an ordinary user is undone by any
+    # setuid binary on the path, so the seal also sets the flag that refuses
+    # one, and the flag is read here rather than assumed from the command that
+    # was supposed to set it.
+    if ! grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status; then
+        echo "test-sealed: inside the seal no_new_privs is not set, so a setuid binary is still a way back to root." >&2
+        exit 1
+    fi
+
+    echo "test-sealed: inside. One interface, loopback, down, no route from it, and no way back to root."
 
     # CARGO_NET_OFFLINE as well as the flag, because the flag covers the cargo
     # this line runs and the variable covers anything that run starts.
@@ -75,8 +102,18 @@ if [ "${1-}" = "--inside" ]; then
     exit 0
 fi
 
-command -v unshare >/dev/null 2>&1 || {
-    echo "test-sealed: unshare is not on the path, so no seal can be built here and this command will not report on one it did not build. It is a Linux command; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+for tool in unshare setpriv; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "test-sealed: $tool is not on the path, so no seal can be built here and this command will not report on one it did not build. Both are Linux commands; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+        exit 1
+    }
+done
+
+# -n so this never asks for anything. A command that stops on a password prompt
+# in a workflow job is a job that times out rather than one that reports, and on
+# a contributor's machine it is an interruption they did not agree to.
+sudo -n true >/dev/null 2>&1 || {
+    echo "test-sealed: there is no password-free route to root here, and building the namespace needs one. The reason is in the comment at the top of this file; the workflow job named in CONTRIBUTING.md is where this runs." >&2
     exit 1
 }
 
@@ -94,12 +131,14 @@ echo "test-sealed: fetching and compiling outside the seal, because the registry
 cargo test --manifest-path server/Cargo.toml --workspace --locked --no-run
 
 echo "test-sealed: entering a network namespace of this process's own"
-# --map-current-user rather than --map-root-user: the point is a suite that runs
-# without administrative rights, and mapping this user to root inside would hand
-# it the appearance of some. The new user namespace is what makes the new
-# network namespace available to an ordinary user, and it is also what makes a
-# setuid binary inside unable to reach the host's root, because the host's uid 0
-# is mapped to nobody in it.
-unshare --user --map-current-user --net -- "$(pwd)/test-sealed" --inside
+# Root builds the box and the suite runs inside it with less than this script
+# had. setpriv drops back to the invoking user and group, empties the
+# supplementary groups, and sets no_new_privs, which is what stops a setuid
+# binary inside the box from being a way back out of the part that was dropped.
+# env because sudo resets the environment and secure_path replaces PATH, and
+# rustup's shims and node both live on the PATH this was called with.
+sudo -n unshare --net -- \
+    setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- \
+    /usr/bin/env "PATH=$PATH" "HOME=$HOME" "$(pwd)/test-sealed" --inside
 
 echo "test-sealed: green, and the environment it was green in had nothing to reach."

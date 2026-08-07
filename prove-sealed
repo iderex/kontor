@@ -36,8 +36,14 @@ cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 root=$(pwd)
 
-command -v unshare >/dev/null 2>&1 || {
-    echo "prove-sealed: unshare is not on the path, so there is no seal here to prove anything about. It is a Linux command; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+for tool in unshare setpriv; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "prove-sealed: $tool is not on the path, so there is no seal here to prove anything about. Both are Linux commands; the workflow job named in CONTRIBUTING.md is where this runs." >&2
+        exit 1
+    }
+done
+sudo -n true >/dev/null 2>&1 || {
+    echo "prove-sealed: there is no password-free route to root here, and building the namespace needs one. ./test-sealed says why at the top of itself." >&2
     exit 1
 }
 command -v cargo >/dev/null 2>&1 || {
@@ -60,12 +66,13 @@ fail() {
     failed=1
 }
 
-note() {
-    echo "  --    $1"
-}
-
+# The same construction ./test-sealed uses, and it is repeated here rather than
+# called because what is being proven is the box and not that script. A change
+# to one that is not made to the other shows up as a pair that stops agreeing.
 seal() {
-    unshare --user --map-current-user --net -- "$@"
+    sudo -n unshare --net -- \
+        setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- \
+        /usr/bin/env "PATH=$PATH" "HOME=$HOME" "$@"
 }
 
 expect_green() {
@@ -94,12 +101,25 @@ echo "prove-sealed: the seal exists"
 # inside the seal, and a seal that cannot be built at all makes each of those
 # red for a reason that has nothing to do with what the leg is about.
 if seal true >/dev/null 2>&1; then
-    pass "an ordinary user can put this process in a network namespace of its own"
+    pass "a command can be put in a network namespace of its own, as this user, with no way back to root"
 else
-    fail "an ordinary user cannot build the seal on this machine, so no leg below reports on one"
+    fail "the seal could not be built on this machine, so no leg below reports on one"
     echo "prove-sealed: the seal could not be built. Nothing here is evidence." >&2
     exit 1
 fi
+
+# Root builds the box, so this is the leg that says root does not run in it.
+inside_uid=$(seal id -u 2>/dev/null || true)
+if [ "$inside_uid" = "$(id -u)" ]; then
+    pass "the seal runs its command as this user rather than as the root that built it"
+else
+    fail "the seal ran its command as uid '$inside_uid' and this user is $(id -u)"
+fi
+
+expect_green "no_new_privs is set inside the seal" \
+    seal grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status
+expect_red "and it is not set outside it, so that leg is about the seal and not about this machine" \
+    grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/self/status
 
 echo "prove-sealed: what the kernel says the two sides are on"
 
@@ -166,17 +186,14 @@ expect_red "inside the seal it is not, because the loopback in there is a differ
 
 echo "prove-sealed: the way back to root"
 
-# The third of the three things the suite is not allowed to have. Inside a user
-# namespace the host's uid 0 is mapped to nobody, so a setuid binary cannot
-# reach it. Where this machine has no passwordless route to root outside the
-# seal either, the pair says nothing and the leg reports that rather than
-# counting a refusal that was already there as one the seal made.
-if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    expect_red "inside the seal there is no way back to root" \
-        seal sudo -n true
-else
-    note "not evaluated: this machine has no passwordless route to root outside the seal, so a refusal inside it would prove nothing"
-fi
+# The third of the three things the suite is not allowed to have, and the pair
+# that carries the most weight, because this machine does have a way back to
+# root and the box is built with it. no_new_privs is what makes the setuid
+# binary that route runs through refuse to elevate.
+expect_green "outside the seal this machine has a way back to root" \
+    sudo -n true
+expect_red "inside the seal the same command cannot take it" \
+    seal sudo -n true
 
 echo "prove-sealed: the display the seal does not take away"
 
