@@ -37,14 +37,48 @@ where the mechanism is not. The ruleset is the mechanism, and a request written
 against the classic endpoint would be a request to configure a thing this
 repository does not use.
 
-The pull request rule's own parameters are worth reading with the rest:
+## The settings requested alongside the contexts
+
+Three of the four are already in force, and they are stated here with their
+reasons rather than left as output nobody argued with. A setting that is in
+force for a reason nobody wrote down is a setting the next person will remove.
+
+A pull request is required, and it is wanted. It is the only moment in this
+repository where a change is a readable object with a body attached to it rather
+than a commit that has already happened. What it costs is the case it does not
+distinguish: the pull request rule's own parameters say who has to read it.
 
     gh api repos/iderex/kontor/rulesets/20486686 --jq '.rules[] | select(.type=="pull_request") | .parameters'
     {"allowed_merge_methods":["merge","squash","rebase"],"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_approving_review_count":0,"required_review_thread_resolution":false,"required_reviewers":[]}
 
 A pull request is required and an approval is not. That is the honest state of a
 project with one person in it, and it is stated here rather than left for
-somebody to discover from a merge that nobody reviewed.
+somebody to discover from a merge that nobody reviewed. Raising the approval
+count above zero is not requested, because a requirement one person cannot
+satisfy is a requirement that gets bypassed or removed, and this repository has
+no bypass actors to do the first with.
+
+Force pushes are refused, by the `non_fast_forward` rule, and it is wanted for a
+reason narrower than tidiness. Every claim in this repository's documents is
+anchored to a commit, and the whole method depends on a reader being able to
+resolve that commit later and get what the writer saw. A force push to the
+default branch turns those anchors into commits that are not reachable, and it
+does it silently. What it costs is the repair route: a bad commit on the default
+branch is corrected by a commit that reverts it and is therefore visible, rather
+than by history that no longer contains it.
+
+Deletion is refused, by the `deletion` rule. What it costs is close to nothing,
+since nobody has a use for deleting the default branch, and what it prevents is
+the one accident from which there is no local recovery.
+
+Signatures are not requested, and the reason is that this repository already
+made the other choice. The trailer of the Developer Certificate of Origin is
+what every commit here carries, `DCO sign-off` is what refuses one that does
+not, and the two mechanisms answer different questions: a signature says a key
+held the commit, and the trailer says the author asserts the right to contribute
+it. Requiring signatures as well would add a key management obligation to every
+contributor for an assurance this project has not argued it needs. If it is ever
+wanted, it is a decision record rather than a line added here.
 
 ## The contexts
 
@@ -58,29 +92,51 @@ still derived rather than remembered: every name is printed by the command above
 it, at a named commit, and a reader who re-runs that command against a later
 commit gets the set as it is then rather than as it was here.
 
+That last sentence is not a formality here, and the drift it warns about has
+already happened once inside this file. An earlier revision of this document
+named twelve contexts, read off the commit that was then the most recent to
+reach the default branch through a pull request. Three gates landed after it was
+written and before it was applied, and the set below is more than twice the size.
+Nothing was applied in between, so the cost was a stale document rather than a
+wrong protection, but the shape of the mistake is the one this repository calls
+`restated-not-referenced` and it is recorded here rather than quietly corrected.
+
 A required check is matched by the name a run reports under, not by the name of
 the workflow or the job in the file, so the set has to be read off a commit that
 has actually been judged. On a commit reached through a pull request:
 
     gh api "repos/iderex/kontor/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[].name'
 
-Read against `b4dab90ff3336ab6215af96fd8a528bcf618ed25`, which is the last
-commit to arrive on the default branch through a pull request, the pull request
-event produced these twelve names, shown here with the workflow that produced
-each so that a reader can find it:
+Read against `fb5cf5a42eb1470b1cf620cc12f5008f245ccf00`, the head of the last
+pull request to reach the default branch, the pull request event produced these
+twenty five names, shown here with the workflow that produced each so that a
+reader can find it:
 
-    Build both layers                                              build
-    Type check the client workspace                                client-types
-    Prove the client type gates bite                               client-types
-    Reject an unreasoned escape from the type system               client-types
-    Reject a carriage return in tracked text                       text-determinism
-    Reject non UTF-8 and byte order marks in tracked text          text-determinism
-    Reject a generated file that is not what its generator writes  text-determinism
-    Prove the determinism gates bite                               text-determinism
-    Reject Trojan Source Unicode                                   unicode-guard
-    DCO sign-off                                                   DCO
-    Review new dependencies against the advisory database          Dependency review
-    Audit workflows (zizmor)                                       Workflow Security Analysis
+    Build both layers                                                     build
+    Type check the client workspace                                       client-types
+    Prove the client type gates bite                                      client-types
+    Reject an unreasoned escape from the type system                      client-types
+    Check the client formatting                                           format-and-lint
+    Check the server formatting                                           format-and-lint
+    Lint the client                                                       format-and-lint
+    Lint the server                                                       format-and-lint
+    Reject a lint suppression naming no rule or giving no reason          format-and-lint
+    Prove the formatter and the lint gate bite                            format-and-lint
+    Reject a carriage return in tracked text                              text-determinism
+    Reject non UTF-8 and byte order marks in tracked text                 text-determinism
+    Reject a generated file that is not what its generator writes         text-determinism
+    Prove the determinism gates bite                                      text-determinism
+    Run the unit suite                                                    tests
+    Run the unit suite where there is nothing to reach                    tests
+    Run the suite that needs a database                                   tests
+    Reject a test that reaches for what the default suite cannot give it  tests
+    Prove the marking bites                                               tests
+    Prove the seal bites                                                  tests
+    Hold the coverage floor                                               tests
+    Reject Trojan Source Unicode                                          unicode-guard
+    DCO sign-off                                                          DCO
+    Review new dependencies against the advisory database                 Dependency review
+    Audit workflows (zizmor)                                              Workflow Security Analysis
 
 The mapping is the second command rather than a reading of the files:
 
@@ -90,30 +146,33 @@ The mapping is the second command rather than a reading of the files:
       gh api "repos/iderex/kontor/actions/runs/$id/jobs" --jq '[.jobs[].name] | join(" | ")'
     done
 
-Two more names appear on that commit and neither belongs in the requested set.
+Two more names appear around that commit and neither belongs in the requested
+set.
 
 `zizmor` is a code scanning check run, produced by the upload of the analysis
-rather than by a job, so it is not one of the twelve and its name is the tool's
-rather than a sentence anybody here chose.
+rather than by a job, so it is not one of the twenty five and its name is the
+tool's rather than a sentence anybody here chose. The workflow's own job reports
+under `Audit workflows (zizmor)`, which is in the set.
 
 `Scorecard supply-chain security` does not run on a pull request at all, so it
 contributes no check run to a commit that arrives by one and cannot be required
 of a merge. Requiring it would leave every pull request waiting for a verdict
-that never comes.
+that never comes. `docs/quality-parity.md` places it as advisory on its own
+grounds, which is the same answer reached from the other direction.
 
-Two workflows are known to the repository and produced no check run on that
-commit, so they are not in the set today. `gh workflow list --repo iderex/kontor`
-prints them; they are the formatting and lint gate of #3 and the test suite of
-#5, and the procedure at the end of this document is how a name joins the set
-once it has run.
+Those two are the whole of the difference between the ten workflows
+`gh workflow list --repo iderex/kontor` prints and the nine that produced a
+check run on the pull request event above. Every other workflow the repository
+knows about is represented in the set.
 
 ## What each requirement costs
 
-The cost of requiring a check is what it blocks, and the list is short because
-these checks are cheap and refuse narrow things.
+The cost of requiring a check is what it blocks. These are read as a
+requirement, meaning what a merge cannot do once the context is required, rather
+than as a description of what the check does.
 
 `Build both layers` blocks a merge that does not compile in either language.
-There is no case for merging one, and what it costs to run is the twenty odd
+There is no case for merging one, and what it costs to run is the twenty seven
 seconds measured below. What it costs to wait for is a different number and the
 section below separates the two.
 
@@ -123,12 +182,35 @@ escape from the type system with no reason written beside it. The third is the
 one that will be argued with, because it blocks a merge for a missing sentence.
 That is the intended cost: the sentence is what makes the escape reviewable.
 
+The six formatting and lint contexts block unformatted source in either
+language, a lint finding in either language, a suppression that names no rule or
+gives no reason, and a change that loosened any of those where they live. The
+suppression context has the same shape of cost as the escape context above, and
+it is worth paying for the same reason. The formatting pair is the cheapest
+thing on this list to satisfy and the one most likely to be met by somebody who
+did not run the gate before pushing, since a formatter disagreement is invisible
+in an editor that is configured differently.
+
 The four determinism contexts block a carriage return in tracked text, a file
 that is not UTF-8 or carries a byte order mark, a generated file that is not
 what its generator writes, and a change that loosened any of those three where
 they live. The third has the largest cost, since it needs a Node install and a
-cargo metadata resolution and is therefore the slowest of the four, and it is
-also the only one that catches a hand edit to a lock file.
+cargo metadata resolution, and it is also the only one that catches a hand edit
+to a lock file.
+
+The seven test contexts are the largest group and they block different things.
+Two of them run the suite, once in the ordinary environment and once where
+nothing outside the process can be reached, and requiring both is what makes the
+headless rule a property of the merge rather than of somebody's habit. One runs
+the suite that needs a database, which is the only context on this list that
+depends on a service being stood up beside the runner, and it is therefore the
+one whose failure is most likely to be about the runner rather than about the
+diff. One refuses a test that reaches for something the default suite cannot
+give it and is not marked for it. The remaining three are proofs: that the
+marking bites, that the seal bites, and that the coverage floor holds. The
+coverage floor is the only context in the whole set whose verdict moves with a
+number rather than with a property, and it will be the first one somebody wants
+lowered.
 
 `Reject Trojan Source Unicode` blocks bidirectional and invisible control
 characters in tracked text. Its cost is close to zero and it stays that way
@@ -155,70 +237,106 @@ CI is where it will be met, and that is where it is wanted.
 The rule for the split is not invented here. `docs/quality-parity.md` states it:
 a check is a merge condition when it is deterministic, bounded and unambiguous,
 and advisory when it scores rather than judges, or when it samples. What this
-section does is apply that rule to the twelve names above with a measurement
-rather than an impression.
+section does is apply that rule to the twenty five names above with a
+measurement rather than an impression.
 
 Bounded is measurable and is measured below. Unambiguous is a judgement about
 each check's failure message. Deterministic is the test that turns out to be
-interesting, and one of the twelve does not pass it cleanly.
+interesting, and one of the twenty five does not pass it cleanly.
 
 Bounded turns out to be two numbers rather than one, and reading only the first
 of them is how this section would have got the answer wrong. What a check costs
 to run is one number. How long a merge waits for its verdict is another, and
-they are not close.
+they are not always close.
 
 What the checks cost, read off the same commit as the names above, from each
 check run's own start and finish rather than from its workflow run's:
 
-    gh api "repos/iderex/kontor/commits/b4dab90ff3336ab6215af96fd8a528bcf618ed25/check-runs?per_page=100" \
+    gh api "repos/iderex/kontor/commits/fb5cf5a42eb1470b1cf620cc12f5008f245ccf00/check-runs?per_page=100" \
       --jq '.check_runs[] | select(.status=="completed") | [.name, .started_at, .completed_at] | @tsv'
 
-Twenty one completed check runs, because nine of the names on that commit were
-produced twice and the section after this one is about that duplication. Every
-one of them finished between two and twenty four seconds. The longest is the
-regeneration of the generated files at twenty four, with the build and the
-workflow audit next at twenty three, and those are the three that install
-something before they can start. The shortest are the text scans, which install
-nothing and finish in three to eight. Nothing in this set is slow to run.
+Forty eight completed check runs under twenty six names, because most of the
+names on that commit were produced twice and the section after this one is about
+that duplication. Every one of them finished between two and thirty nine
+seconds. The longest is `Run the suite that needs a database` at thirty nine,
+with `Build both layers` next at twenty seven, and the three test proofs behind
+them in the low twenties. The shortest are the text scans and the type system
+escape scan, which install nothing and finish in four. Nothing in this set is
+slow to run, and the group that grew the set since the earlier revision did not
+change that.
 
-That is not what a merge waits for. A workflow run's own timestamps include the
-time it spends queued before a runner takes it, and the run level figure is
-therefore execution plus queue rather than execution:
+That is not necessarily what a merge waits for. A workflow run's own timestamps
+include the time it spends queued before a runner takes it, and the run level
+figure is therefore execution plus queue rather than execution:
 
     gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100&status=completed" \
-      --jq '.workflow_runs[] | [.created_at, .updated_at, .name] | @tsv'
+      --jq '.workflow_runs[] | [((.updated_at|fromdateiso8601) - (.created_at|fromdateiso8601)), .name, .created_at] | @tsv' \
+      | sort -rn | head -3
+    21992   text-determinism   2026-08-06T16:25:04Z
+    21980   format-and-lint    2026-08-06T16:25:04Z
+    21600   DCO                2026-08-06T16:25:04Z
 
-Read as this was written, the six longest completed runs each span between five
-hours fifty six minutes and six hours seven minutes from creation to last
-update, for check runs that execute in under half a minute. Twenty nine further
-runs had been created and had not started at all, and one was in flight, out of
-one hundred and ninety three the repository holds:
+Six hours and six minutes, for check runs that execute in under half a minute.
+That is the worst this repository has recorded and it is what an earlier
+revision of this section measured, when twenty nine runs of one hundred and
+ninety three had been created and not started.
+
+The same call now returns nothing waiting:
 
     gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100" \
       --jq '.workflow_runs[].status' | sort | uniq -c
-    163 completed
-      1 in_progress
-     29 queued
+    272 completed
 
-A required context does not hold a merge for the twenty four seconds it runs. It
-holds the merge until its verdict arrives, and on the evidence above the arrival
-time is set by the runner queue rather than by anything in this repository.
+And on the commit the names above come from, the fifteen runs each finished
+within forty two seconds of being created:
 
-That is not an argument for making any of these advisory. An advisory check on
-the same queue reports just as late; it stops mattering, which is a different
-property from being fast. It is an argument for reading the queue before the
-request is applied rather than after, because the twenty four seconds is the
-number somebody will quote and it is not the number that will be felt. Whoever
-adds the first context should run the second command above first, and the
-procedure at the end of this document is where that belongs.
+    gh api "repos/iderex/kontor/actions/runs?head_sha=fb5cf5a42eb1470b1cf620cc12f5008f245ccf00&per_page=100" \
+      --jq '.workflow_runs[] | [((.updated_at|fromdateiso8601) - (.created_at|fromdateiso8601)), .name, .event] | @tsv' \
+      | sort -rn | head -2
+    42  tests   push
+    35  tests   pull_request
 
-Flakiness is the question no measurement here can answer, and saying so is more
-useful than a reassuring sentence. The same call grouped by conclusion returns
-no failed run of any workflow, one hundred and sixty three successes and no
-other conclusion, against the thirty runs above that have not reached one. A
-history with no red in it tells you nothing about how a check behaves when it
-goes red, and it cannot distinguish a check that never fails from one that has
-not yet been given the chance.
+So the wait is not a property of any check in this set and it is not a constant
+of the repository either. It is the runner queue, it has been six hours and it
+is currently nothing, and the only safe reading is that it has to be measured at
+the moment the request is applied rather than quoted from here. An advisory
+check on a slow queue reports just as late; it stops mattering, which is a
+different property from being fast, so a queue is never the argument for making
+one of these advisory. Whoever adds the first context should run the status
+command above first, and the procedure at the end of this document is where that
+belongs.
+
+Flakiness now has one data point where the earlier revision had none, and it is
+worth more than the reassuring sentence it replaces. Across the whole history
+there is exactly one red:
+
+    gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100" \
+      --jq '.workflow_runs[].conclusion' | sort | uniq -c
+      1 failure
+    271 success
+
+    gh api --paginate "repos/iderex/kontor/actions/runs?per_page=100" \
+      --jq '.workflow_runs[] | select(.conclusion=="failure") | [.name, .event, .head_sha[0:7]] | @tsv'
+    tests   push    7d15599
+
+    gh api "repos/iderex/kontor/actions/runs/31141202682/jobs" --jq '.jobs[] | [.name, .conclusion] | @tsv'
+    Reject a test that reaches for what the default suite cannot give it     success
+    Run the unit suite where there is nothing to reach                       failure
+    Run the unit suite                                                       success
+    Prove the seal bites                                                     failure
+    Hold the coverage floor                                                  success
+    Prove the marking bites                                                  success
+    Run the suite that needs a database                                      success
+
+Two of the seven test contexts went red on one commit, and they are the two
+about the sealed environment. The commit is reachable from the default branch,
+its successor on the same branch is green, and every run of that workflow before
+and after it succeeded. That reads as a check catching the thing it was written
+for on the commit that introduced it, rather than as a check that fails at
+random, and it is the strongest evidence in this document that the sealed pair
+bites. It says nothing about the other twenty three, which have still never been
+observed red, and a check that has not been given the chance to fail is not the
+same as one that does not.
 
 `Review new dependencies against the advisory database` is the one that fails
 the determinism test, and the map places it as a merge condition anyway. Its
@@ -232,29 +350,40 @@ overnight. Requiring it is defensible, and it is requested here, but it is
 requested with that property written down rather than as though the check were
 a pure function of the diff.
 
-The other eleven pass all three tests on the evidence available. None is
-proposed as advisory, and the flakiness half of the split is owed to the first
-failure anybody sees rather than settled here.
+`Hold the coverage floor` deserves the same honesty from the other direction. It
+is deterministic and bounded and it passes the rule, but its verdict is a
+threshold rather than a property, so it is the one context in the set that can
+be satisfied by moving the number instead of by fixing the change. That is a
+review problem rather than a reason to make it advisory, and it is named so that
+the first request to lower the floor is recognised as what it is.
+
+The other twenty three pass all three tests on the evidence available. None is
+proposed as advisory.
 
 ## The thing to settle before any of this is applied
 
-Every workflow in this tree triggers on `push` to every branch and on
-`pull_request`, so a commit that is both pushed and in a pull request is judged
-twice under each name:
+Every workflow in this tree that triggers on `push` does so for every branch and
+also triggers on `pull_request`, so a commit that is both pushed and in a pull
+request is judged twice under each name:
 
-    S=b4dab90ff3336ab6215af96fd8a528bcf618ed25
-    gh api "repos/iderex/kontor/commits/$S/check-runs" --jq '[.check_runs[].name] | length'
-    22
-    gh api "repos/iderex/kontor/commits/$S/check-runs" --jq '[.check_runs[].name] | unique | length'
-    13
-    gh api "repos/iderex/kontor/commits/$S/check-runs" \
+    S=fb5cf5a42eb1470b1cf620cc12f5008f245ccf00
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" --jq '[.check_runs[].name] | length'
+    48
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" --jq '[.check_runs[].name] | unique | length'
+    26
+    gh api "repos/iderex/kontor/commits/$S/check-runs?per_page=100" \
       --jq '[.check_runs[].name] | group_by(.) | map(select(length == 2)) | length'
-    9
+    22
 
-Twenty two runs under thirteen names, and nine of those names are carried by two
-runs each. The nine are exactly the jobs of the four workflows that ran on both
-events; the four names that appear once belong to workflows that ran on the pull
-request only.
+Forty eight runs under twenty six names, and twenty two of those names are
+carried by two runs each. The four that appear once are the three workflows that
+trigger on the pull request only, meaning sign off, dependency review and the
+workflow audit, together with the code scanning run.
+
+This has got worse rather than better since it was first written, when the same
+three numbers were twenty two, thirteen and nine. Every gate that landed in
+between doubled with the rest, so twenty two of the twenty five names requested
+above are ambiguous in exactly this way.
 
 Requiring a context whose name is carried by two runs of two different events is
 a request whose meaning depends on how the platform resolves the duplicate, and
@@ -262,23 +391,14 @@ this document does not know how it resolves it. Reading that behaviour, or
 removing the duplication by deciding which event a gate belongs to, belongs to
 #6, which owns what runs on a pull request. It is named here because applying
 this request before that is settled would be requiring something nobody has
-read.
-
-## Signatures
-
-Not requested, and the reason is that this repository already made the other
-choice. The trailer of the Developer Certificate of Origin is what every commit
-here carries, `DCO sign-off` is what refuses one that does not, and the two
-mechanisms answer different questions: a signature says a key held the commit,
-and the trailer says the author asserts the right to contribute it. Requiring
-signatures as well would add a key management obligation to every contributor
-for an assurance this project has not argued it needs. If it is ever wanted, it
-is a decision record rather than a line added here.
+read, and it is now the larger half of the request rather than a footnote on it.
 
 ## How a check joins the required set later
 
 Four steps, in this order, so that the set can grow without this document being
-rewritten.
+rewritten. The set has already grown by thirteen names since this document was
+first written, which is why the steps exist and why this revision does not treat
+its own list as settled.
 
 The check runs on a pull request and is seen to run. Until a name appears in the
 first command of this document against a real commit, requiring it would block
