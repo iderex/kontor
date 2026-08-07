@@ -54,6 +54,8 @@
 /client/prove-gates       text eol=lf
 /client/suppression-scan  text eol=lf
 /text-scan                text eol=lf
+/pr-body-scan             text eol=lf
+/prove-pr-body            text eol=lf
 /regenerate               text eol=lf
 /prove-determinism        text eol=lf
 /format                   text eol=lf
