@@ -1,0 +1,101 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# One refusal over the comments in the workflow files: a file this repository
+# does not hold, named as though it did.
+#
+#     workflow-scan
+#     workflow-scan /path/to/a/checkout
+#
+# The comments in `.github/workflows/` are where every gate is argued, and they
+# are the only place some of those arguments exist. A comment naming a workflow
+# that is not in the tree does not read as stale, it reads as a description of
+# attack surface, and somebody deciding whether a gate is set correctly checks
+# it against a repository that is not this one. That happened, in the file whose
+# whole subject is the workflows, and #156 is where it is recorded.
+#
+# WHAT IT READS AND WHAT IT DOES NOT. Only the part of a line after its first
+# `#`, so a path on a `run:` line or in a `with:` block is not judged here:
+# those are executed, and a wrong one fails the run rather than misleading a
+# reader. Only a token ending in one of a closed set of extensions is taken as a
+# reference, because a rule that guessed at what looks like a path would refuse
+# `no_new_privs` and every version number. And the reference has to resolve to a
+# TRACKED file, since a path that exists only in somebody's working tree is
+# exactly the reference a reader cannot follow.
+#
+# A bare `something.yml` resolves against `.github/workflows/` as well as
+# against the root, because that is how these files refer to each other and
+# demanding the long form would be a rule about spelling rather than about
+# resolution.
+#
+# WHAT IT CANNOT DO. An issue number in a comment is not judged: resolving one
+# reaches the tracker, and every rule here answers from the checkout alone.
+# `#156` is where the reference this rule was written for sits alongside an
+# issue number that resolves to nothing, and only the first half of that pair is
+# refused by anything.
+#
+# POSIX sh with the reading in awk, matching text-scan and the other scans, and
+# for the same reason: every rule here is a question about lines of text plus
+# one call to git, and a check that decides whether a comment can be followed
+# should not wait on a compiler. The reading is one awk program over every file
+# rather than a shell loop calling git per token, because the second shape takes
+# minutes on a machine where starting a process is expensive.
+set -eu
+
+cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
+
+tracked=$(mktemp)
+trap 'rm -f "$tracked"' EXIT
+git ls-files > "$tracked"
+
+# The extensions a token has to end in to be read as a reference. Closed, so the
+# rule refuses a reference it can resolve rather than guessing at what a path
+# looks like. A file type this tree does not yet hold is added on the day it
+# arrives.
+# xargs reports a failing child under an exit code of its own, and a caller
+# reading this script's verdict should see the one number every other scan here
+# returns, so the refusal is mapped back to 1 at the end.
+status=0
+
+git ls-files .github/workflows/ | tr '\n' '\0' | xargs -0 awk -v tracked="$tracked" '
+BEGIN {
+    while ((getline path < tracked) > 0) {
+        have[path] = 1
+    }
+    close(tracked)
+    reference = "[A-Za-z0-9_][A-Za-z0-9_./-]*\\.(yml|yaml|md|json|toml|rs|ts|lock)"
+}
+
+{
+    hash = index($0, "#")
+    if (hash == 0) {
+        next
+    }
+    rest = substr($0, hash + 1)
+
+    while (match(rest, reference)) {
+        name = substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+        judged++
+
+        if (name in have) {
+            continue
+        }
+        if ((".github/workflows/" name) in have) {
+            continue
+        }
+
+        printf "workflow-scan: %s:%d names %s, which is not a tracked file here. A comment arguing from a file this tree does not hold reads as a description of this repository and is one of another.\n", FILENAME, FNR, name > "/dev/stderr"
+        refused++
+    }
+}
+
+END {
+    if (refused > 0) {
+        printf "workflow-scan: %d reference(s) in a workflow comment resolve to nothing.\n", refused > "/dev/stderr"
+        exit 1
+    }
+    printf "workflow-scan: %d file reference(s) in workflow comments, every one of them tracked here.\n", judged
+}
+' || status=1
+
+exit "$status"

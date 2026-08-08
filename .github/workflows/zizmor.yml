@@ -1,6 +1,11 @@
-# Static analysis of the GitHub Actions workflows themselves (zizmor). The
-# workflow YAML is release-critical attack surface - publish-beta.yml runs on
-# every push to main with contents:write - so it is audited like any other code.
+# Static analysis of the GitHub Actions workflows themselves (zizmor). Every
+# workflow here is a gate rather than a publisher: nothing in this repository
+# releases anything yet, and no job anywhere takes write on the contents. What
+# makes the files worth auditing is the other half of the same fact. They are
+# what stands in front of a merge, they run against a branch anybody with a
+# fork can push, and a change to one of them is a change to the thing that
+# judges every other change. A workflow that quietly stopped refusing would
+# leave a green tree behind it.
 #
 # The gate runs zizmor's regular persona at --min-severity=low: it fails the
 # build on any actionable (low/medium/high/critical) security finding -
@@ -9,15 +14,23 @@
 # regular persona is the one zizmor documents for CI ("high-signal, low-noise,
 # actionable"). The pedantic persona is deliberately NOT used to gate: it adds
 # low-severity hygiene findings (undocumented permissions, missing concurrency,
-# pin-comment mismatches, unnamed jobs) that are stylistic, not security-blocking,
-# and some are context-blind (it would demand run-cancelling concurrency on the
-# release workflows, which must never be cancelled mid-publish). That backlog is
-# tracked as a code-quality task (#263), not gated here.
+# pin-comment mismatches, unnamed jobs) that are stylistic rather than
+# security-blocking. Nothing here tracks that backlog, and this comment says so
+# rather than pointing at an issue.
+#
+# This paragraph argued from a different repository until #156. It described a
+# beta publishing workflow running on every push to main with write on the
+# contents, and neither the file nor the permission is in this tree; it warned
+# against cancelling a release run, and there is no release run; and it sent a
+# reader to an issue number this tracker does not hold. `workflow-scan` now
+# refuses a file named in a comment here that the tree does not hold, which is
+# the half of that drift a machine can catch. The issue number was not caught by
+# anything and was corrected by reading.
 #
 # Rule for future workflow changes: every new or edited workflow must pass this
 # gate before merge. Keep actions SHA-pinned, keep checkout on
-# persist-credentials:false, grant write permissions per job (never
-# workflow-level), and never restore a cache in a job that publishes a release.
+# persist-credentials:false, and grant write permissions per job rather than at
+# the workflow level.
 name: Workflow Security Analysis
 
 on:

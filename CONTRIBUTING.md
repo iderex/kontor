@@ -279,6 +279,23 @@ legs run them against fixtures of their own, and nothing joins the two, so a
 leg green. #114 is where the rest of the supply chain belongs, and it names what
 is not covered yet.
 
+The comments in `.github/workflows/` are where every gate is argued, and one
+command refuses a comment that argues from a file this repository does not hold:
+
+    ./workflow-scan
+    ./prove-workflow-scan
+
+The first reads the part of each line after its first `#`, takes every token
+ending in an extension it knows, and refuses one that resolves to no tracked
+file. A bare `something.yml` resolves under `.github/workflows/` as well as
+under the root, because that is how these files refer to each other. The second
+is the evidence, against repositories it builds rather than against this tree.
+
+What it does not judge is a path on a `run:` line, which is executed and fails
+the run rather than misleading a reader, and an issue number, which would have
+to be resolved against the tracker rather than against the checkout. #156 is
+where both bounds are recorded.
+
 The tree it builds:
 
     git ls-tree --name-only HEAD
@@ -309,6 +326,7 @@ The tree it builds:
     prove-pr-body
     prove-quality
     prove-sealed
+    prove-workflow-scan
     regenerate
     rust-toolchain.toml
     server
@@ -317,6 +335,7 @@ The tree it builds:
     test-scan
     test-sealed
     text-scan
+    workflow-scan
 
 ## What runs on a pull request
 
