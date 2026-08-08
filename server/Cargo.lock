@@ -110,6 +110,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kontor-connector"
+version = "0.0.0"
+
+[[package]]
 name = "kontor-lint-fixture"
 version = "0.0.0"
 
