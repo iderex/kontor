@@ -1,0 +1,17 @@
+[package]
+name = "kontor-connector"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# No dependencies, and that is the placement rather than an omission. This crate
+# holds the declaration vocabulary and the refusal that reads it, so it talks to
+# nothing in the stack and nothing in the stack talks to it. The edges appear
+# with the first connector crate, which is #83, and
+# docs/decisions/0011-connectors.md is where they are argued.

@@ -192,6 +192,15 @@ under #22. It is not a layer of the stack because it has no state and talks to
 nothing; it is a vocabulary, and putting it in the stack would mean choosing a
 level for something every level needs.
 
+Beside it, and also not in the stack, is the connector module. It depends on
+nothing and nothing depends on it, because what it holds today is the declaration
+every connector carries and the refusal that reads it, which
+`docs/decisions/0011-connectors.md` argues for under #82. A connector itself is a
+crate of its own, named so that the refusal can ask the question of one that has
+declared nothing, and where those crates sit in the stack is decided by #83
+rather than here: an edge added now to anticipate the first connector would be a
+placement chosen by this note instead of by the work.
+
 At the bottom of the stack itself is the store, which owns the tables and is the
 only thing that talks to the database. Above it the metadata layer, which holds objects, fields,
 types and validation as run time data and turns a change to them into a reviewed
