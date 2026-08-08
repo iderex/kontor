@@ -14,8 +14,13 @@
 # The fixtures are built rather than tracked. A tracked crate holding an unmarked
 # test that opens a socket is exactly what test-scan refuses, so committing one
 # would redden the real run for the sake of proving that it can. Each case is a
-# throwaway cargo workspace with one crate and one test target, because the scan
-# reads what cargo reports and nothing else.
+# throwaway cargo workspace with one crate, because the scan reads what cargo
+# reports and nothing else.
+#
+# Two groups of legs, because test-scan carries two rules over one register. The
+# first group is a test target and its marking. The second is a test inside a
+# crate src/, which can carry no marking at all, and its legs are the ones that
+# say the refusal is about the test rather than about the file it sits in.
 #
 # POSIX sh, matching ./build, because the legs are exit codes from another
 # program.
@@ -152,6 +157,106 @@ marking_case "a marking naming something outside the four is refused" \
 # everything put in front of it.
 marking_case "an unmarked test that reaches for nothing is accepted" \
     "$reaches_nothing" "" green
+
+echo "prove-headless: a test inside a crate src/"
+
+# The same shape without a test target. What these cases are about is a test that
+# cannot be marked, so a manifest offering it a feature to be marked with would
+# be offering the repair the message deliberately does not.
+src_case() {
+    what=$1
+    lib=$2
+    extra_name=$3
+    extra=$4
+    expectation=$5
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/crates/probe/src"
+    cat > "$tmp/Cargo.toml" <<EOF
+[workspace]
+resolver = "3"
+members = ["crates/probe"]
+EOF
+    {
+        echo '[package]'
+        echo 'name = "probe"'
+        echo 'version = "0.0.0"'
+        echo 'edition = "2024"'
+        echo 'publish = false'
+    } > "$tmp/crates/probe/Cargo.toml"
+    printf '%s\n' "$lib" > "$tmp/crates/probe/src/lib.rs"
+    if [ -n "$extra_name" ]; then
+        printf '%s\n' "$extra" > "$tmp/crates/probe/src/$extra_name"
+    fi
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh "$root/test-scan" --root "$tmp"
+    else
+        expect_green "$what" sh "$root/test-scan" --root "$tmp"
+    fi
+
+    rm -rf "$tmp"
+}
+
+in_crate_reaches_the_network='#[cfg(test)]
+mod tests {
+    use std::net::TcpStream;
+
+    #[test]
+    fn it_connects() {
+        let _ = TcpStream::connect("example.org:80");
+    }
+}'
+
+in_crate_reaches_nothing='#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_adds() {
+        assert_eq!(2 + 2, 4);
+    }
+}'
+
+# The near miss, and the one leg here worth the most. The reach is in the crate
+# rather than in the test, one line above a test module that reaches for
+# nothing. A scan that took the file instead of the item would refuse this, and
+# it would be refusing library code under a message about tests.
+library_reaches_the_network='use std::net::TcpStream;
+
+pub fn dial() {
+    let _ = TcpStream::connect("example.org:80");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_adds() {
+        assert_eq!(2 + 2, 4);
+    }
+}'
+
+# The same test, declared rather than written inline, which is the shape that
+# escapes a reader looking at one file.
+declares_a_test_module='#[cfg(test)]
+mod tests;'
+
+test_module_file='use std::net::TcpStream;
+
+#[test]
+fn it_connects() {
+    let _ = TcpStream::connect("example.org:80");
+}'
+
+src_case "a test inside src/ that opens an outbound socket is refused" \
+    "$in_crate_reaches_the_network" "" "" red
+
+src_case "the same test with the reach taken out is accepted" \
+    "$in_crate_reaches_nothing" "" "" green
+
+src_case "the same reach in library code beside a clean test module is accepted" \
+    "$library_reaches_the_network" "" "" green
+
+src_case "a test module declared as a file, reaching the network, is refused" \
+    "$declares_a_test_module" "tests.rs" "$test_module_file" red
 
 echo "prove-headless: the tree itself"
 
