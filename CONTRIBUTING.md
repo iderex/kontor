@@ -257,6 +257,28 @@ ship with the toolchain, and `./coverage` refuses with the install line rather
 than working around it. The `llvm-tools` component it reads is named in
 `rust-toolchain.toml`, so rustup installs that part inside this tree.
 
+Both installs above read a lock file and refuse where it does not match the
+manifest beside it, which is the whole of what stops a dependency being resolved
+fresh on the machine that builds a release. `cargo build --locked` carries it on
+the server and `npm ci` carries it on the client, and one more command is the
+evidence that both still refuse:
+
+    ./prove-lock-files
+
+Every leg builds a fixture package and runs the shipped flag against it. A
+dependency added to a manifest alone is refused, an absent lock file is refused
+rather than written, the same drifted fixture passes with the flag off, and the
+corrected neighbour passes, so a leg cannot be satisfied by a toolchain that
+refused for another reason or by one that refuses everything. Each fixture
+depends on a directory beside it rather than on a registry, so no leg reaches a
+network.
+
+What that command does not read is `build`. The flags are written there, the
+legs run them against fixtures of their own, and nothing joins the two, so a
+`build` that dropped `--locked` or reached for `npm install` would leave every
+leg green. #114 is where the rest of the supply chain belongs, and it names what
+is not covered yet.
+
 The tree it builds:
 
     git ls-tree --name-only HEAD
@@ -283,6 +305,7 @@ The tree it builds:
     prove-determinism
     prove-headless
     prove-licences
+    prove-lock-files
     prove-pr-body
     prove-quality
     prove-sealed

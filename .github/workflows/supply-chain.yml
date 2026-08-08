@@ -1,0 +1,52 @@
+# The evidence that the two lock file refusals still refuse. `build` installs
+# both layers with the flag that reads the lock file and stops where it does not
+# match the manifest beside it, and until this job nothing showed that either
+# flag still bites. A dependency resolved fresh instead of read out of a lock is
+# how a compromised version arrives without anybody choosing it.
+#
+# The job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: supply-chain
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every other gate here has: a commit in a pull request is judged once under
+  # this name, and the default branch is judged again when the merge lands.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. The job builds its fixtures under the runner's own temporary
+# directory and writes nothing back here.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proof:
+    name: Prove the lock file gates bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version.
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # Every fixture depends on a directory beside it rather than on a
+        # registry, so no leg here reaches a network and the verdict does not
+        # depend on what a cache holds.
+        run: ./prove-lock-files
