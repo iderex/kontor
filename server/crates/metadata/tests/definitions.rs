@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! What the metadata layer refuses, and what it does not.
 //!
 //! Every rule has a test that trips exactly it. The assertion is on the SET of

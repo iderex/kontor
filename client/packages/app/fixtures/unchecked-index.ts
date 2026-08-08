@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // A fixture for client/prove-gates, and the only file in the client workspace
 // that is meant to be red. tsconfig.json includes `src` alone, so neither the
 // build nor the workspace type check reads this directory; the two fixture

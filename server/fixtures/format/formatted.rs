@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // The one-change neighbour of unformatted.rs, and the leg that stops the
 // evidence from being satisfied by a formatter that refuses everything. The
 // same function, after rustfmt has been over it, has to pass under exactly the

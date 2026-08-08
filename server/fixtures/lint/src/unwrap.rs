@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Refused by clippy::unwrap_used, which server/Cargo.toml denies.
 //
 // The mistake is the one everybody makes under time pressure. It compiles, it

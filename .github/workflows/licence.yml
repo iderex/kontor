@@ -1,0 +1,84 @@
+# The licence, where a machine can refuse a departure from it.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+#
+# Three jobs rather than one, because a red tick should name one thing: the
+# header every source file carries, the licences the dependencies are under, and
+# the evidence that both of those refuse what they name.
+name: licence
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every gate in this tree uses so that a commit is judged once per name.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: no job writes anything back.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  headers:
+    name: Reject a source file that does not say what it is licensed under
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject a source file that does not say what it is licensed under
+        # The register comes from git rather than from a list in this file, so a
+        # source file added tomorrow is judged from the commit that adds it.
+        run: ./licence-scan headers
+
+  dependencies:
+    name: Reject a dependency under a licence nobody wrote a reason for
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. node is what reads the two JSON documents
+          # here, which is the reason docs/layout.md gives for node over jq.
+          node-version-file: .nvmrc
+
+      - name: Reject a dependency under a licence nobody wrote a reason for
+        # Nothing is installed for this. The client half is judged from the lock
+        # file, which is what npm ci would install rather than what happens to be
+        # on a machine, and the server half is judged from what cargo resolves
+        # under --locked.
+        run: ./licence-scan dependencies
+
+  proof:
+    name: Prove the licence gates bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control, and the cheapest way for one to stop working is for it to go
+        # on passing. Each leg builds a fixture repository, runs the shipped
+        # command against it and reads the exit code, so loosening a rule where
+        # it lives reddens the leg that depended on it.
+        run: ./prove-licences

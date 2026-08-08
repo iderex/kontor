@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! An object definition and a field definition, and the rules a definition has
 //! to satisfy before anything tries to realise it.
 //!

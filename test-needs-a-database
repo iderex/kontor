@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # The suite that needs a PostgreSQL database, named for what it needs rather
 # than for what it covers. A suite called "integration" tells somebody reading a
 # red run nothing about what to install.

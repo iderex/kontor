@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The integration suite, and today it holds the harness rather than a test of
 //! this project's own code.
 //!

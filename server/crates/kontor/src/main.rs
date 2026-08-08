@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The server binary.
 //!
 //! It has no behaviour. #90 gives it a validated configuration that fails

@@ -1,0 +1,108 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The tool that writes the licence header licence-scan refuses the absence of.
+#
+# Run from anywhere:
+#
+#     licence-apply
+#
+# An argument names the repository to write in, and defaults to this one. It
+# exists so prove-licences can run the shipped tool against a fixture repository
+# rather than against a copy of what it does.
+#
+# BY A TOOL RATHER THAN BY HAND is the point of this file. A header written by
+# hand is a header somebody types differently the fourth time, and the fourth
+# spelling is the one a scanner refuses on a Friday for a reason that reads as
+# pedantry. There is one spelling here, it is derived from the same manifest
+# licence-scan derives it from, and this file holds no copy of it.
+#
+# It is idempotent. A file already carrying the right header on the right line
+# is left alone, byte for byte, so running this is never a way to produce a diff
+# that has to be reviewed.
+#
+# WHAT IT WILL NOT DO. It never replaces a header naming a different licence. A
+# tree whose files say something other than what the manifests say is a tree
+# where somebody's intention was recorded in the wrong place, and quietly
+# rewriting it destroys the only evidence of what that intention was.
+# licence-scan names those files and a person decides.
+#
+# WHAT IT COSTS. A file with no newline at the end of its last line gets one,
+# because the rewrite is line by line. Nothing in this tree is in that state and
+# the shell tooling that reads these files expects the newline, so the cost is
+# named here rather than worked around with a byte-level rewrite.
+#
+# POSIX sh with one awk pass, matching licence-scan, and for the same reason: a
+# loop spawning a handful of processes per file is minutes rather than seconds
+# on a machine where a fork is expensive.
+set -eu
+
+root=$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)
+cd "$root"
+
+identifier=$(sed -n 's/^license = "\([^"]*\)".*/\1/p' server/Cargo.toml 2>/dev/null | head -n 1)
+[ -n "$identifier" ] || {
+    echo "licence-apply: server/Cargo.toml declares no licence, so there is nothing to write. licence-scan is what says why that is refused rather than defaulted." >&2
+    exit 1
+}
+
+# The same register licence-scan judges: tracked files in the two source
+# languages, and tracked files that begin with a shebang.
+set --
+while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ -f "$file" ] || continue
+    set -- "$@" "$file"
+done <<EOF
+$({
+    git ls-files -- '*.rs' '*.ts' '*.js' '*.mjs' '*.cjs'
+    git grep --cached -I -n -E '^#!' -- . | awk -F: '$2 == 1 { print $1 }'
+} | sort -u)
+EOF
+
+[ "$#" -gt 0 ] || {
+    echo "licence-apply: nothing tracked is owed a header." >&2
+    exit 0
+}
+
+# Every file is read before any file is written. awk finishes its input before
+# END runs, so writing back to a path it read from is safe here in a way that a
+# redirect inside the read loop would not be.
+awk -v id="$identifier" '
+    function wanted_for(path,   marker) {
+        marker = (path ~ /\.(rs|ts|js|mjs|cjs)$/) ? "//" : "#"
+        return marker " SPDX-License-Identifier: " id
+    }
+    {
+        line = $0
+        sub(/\r$/, "", line)
+        lines[FILENAME, FNR] = $0
+        bare[FILENAME, FNR] = line
+        held[FILENAME] = FNR
+    }
+    END {
+        written = 0
+        left = 0
+        for (i = 1; i < ARGC; i++) {
+            path = ARGV[i]
+            want = wanted_for(path)
+            at = (bare[path, 1] ~ /^#!/) ? 2 : 1
+
+            if (bare[path, at] == want) { left++; continue }
+
+            if (bare[path, at] ~ /SPDX-License-Identifier:/) {
+                printf "licence-apply: %s line %d already names an identifier and it is not %s. Left alone; decide what it should say.\n", path, at, id
+                left++
+                continue
+            }
+
+            for (n = 1; n <= held[path]; n++) {
+                if (n == at) print want > path
+                print lines[path, n] > path
+            }
+            if (held[path] < at) print want > path
+            close(path)
+            written++
+        }
+        printf "licence-apply: %d files written, %d left as they were. licence-scan headers is what says whether the tree passes.\n", written, left
+    }
+' "$@"

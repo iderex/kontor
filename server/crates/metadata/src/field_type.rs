@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The field types an operator may choose from, and what each one commits the
 //! rest of the system to.
 //!

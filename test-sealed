@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # The unit suite, in an environment that has none of what a unit test may not
 # need, rather than in one that merely happens to have nothing.
 #

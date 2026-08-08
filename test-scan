@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # A test that needs something the default suite cannot give it is marked, and an
 # unmarked one that reaches for it is refused here rather than at an assertion.
 #

@@ -1,0 +1,297 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The two licence gates and the tool that satisfies one of them, shown to bite.
+#
+#     prove-licences
+#
+# Each leg builds a fixture repository, runs the shipped script against it and
+# reads the exit code. No leg restates a rule, so a rule loosened where it lives
+# reddens the leg that depended on it rather than passing quietly.
+#
+# The fixture is a whole small tree rather than one file, because both rules
+# read more than one place: the header rule derives the identifier from the two
+# workspace manifests, and the dependency rule reads what cargo reports and what
+# the client lock file holds. A fixture missing either half would exercise the
+# refusal that fires when something is absent instead of the rule the leg is
+# named for.
+#
+# NOTHING IS INSTALLED FOR ANY LEG. The client half is judged from a lock file
+# written here, which is what npm ci would install rather than what happens to
+# be on this machine, and the server half is a workspace with no dependency
+# outside itself, so cargo resolves it offline.
+#
+# POSIX sh, matching the scripts it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass)"
+    fi
+}
+
+# Refused, and refused for this leg's reason. An exit code alone is not enough
+# here: every leg mutates one fixture, and several of the refusals in
+# licence-scan can be provoked by a fixture that is broken in some other way, so
+# a leg named for one rule could be satisfied by another and go on passing after
+# the rule it names was removed.
+expect_red_saying() {
+    what=$1
+    saying=$2
+    shift 2
+    if out=$("$@" 2>&1); then
+        fail "$what (it passed, and it was supposed to be refused)"
+        return
+    fi
+    case "$out" in
+        *"$saying"*) pass "$what" ;;
+        *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$saying')" ;;
+    esac
+}
+
+expect_green_saying() {
+    what=$1
+    saying=$2
+    shift 2
+    if ! out=$("$@" 2>&1); then
+        fail "$what (it was refused, and it was supposed to pass)"
+        return
+    fi
+    case "$out" in
+        *"$saying"*) pass "$what" ;;
+        *) fail "$what (it passed, and it did not print '$saying', so the leg proved nothing)" ;;
+    esac
+}
+
+# A tree with both manifests, one source file of each shape, an allow list, and
+# a client lock file. Every leg starts from a copy of this and changes one
+# thing.
+#
+# Built once and copied rather than built per leg. Twenty fixtures each running
+# git init and cargo generate-lockfile is twenty minutes on a machine where a
+# fork is expensive, and a proof somebody will not wait for is a proof that runs
+# after the push rather than before it. The copy carries the .git directory and
+# the lock file with it, so each leg still gets a repository of its own that no
+# other leg has touched.
+build_the_base() {
+    tmp=$(mktemp -d)
+
+    mkdir -p "$tmp/server/crates/app/src" "$tmp/client"
+
+    cat > "$tmp/server/Cargo.toml" <<'MANIFEST'
+[workspace]
+resolver = "2"
+members = ["crates/app"]
+
+[workspace.package]
+license = "AGPL-3.0-only"
+MANIFEST
+
+    cat > "$tmp/server/crates/app/Cargo.toml" <<'MANIFEST'
+[package]
+name = "app"
+version = "0.0.0"
+license.workspace = true
+publish = false
+MANIFEST
+
+    printf '%s\n%s\n' '// SPDX-License-Identifier: AGPL-3.0-only' '//! The fixture crate.' \
+        > "$tmp/server/crates/app/src/lib.rs"
+
+    printf '%s\n%s\n%s\n' '#!/bin/sh' '# SPDX-License-Identifier: AGPL-3.0-only' 'echo fixture' \
+        > "$tmp/script"
+
+    cat > "$tmp/client/package.json" <<'MANIFEST'
+{
+  "name": "fixture",
+  "private": true,
+  "license": "AGPL-3.0-only"
+}
+MANIFEST
+
+    cat > "$tmp/client/package-lock.json" <<'LOCK'
+{
+  "name": "fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "fixture", "license": "AGPL-3.0-only" },
+    "node_modules/permissive": { "name": "permissive", "version": "1.0.0", "license": "MIT" }
+  }
+}
+LOCK
+
+    cat > "$tmp/licences-allowed" <<'LIST'
+# The fixture's own licence.
+AGPL-3.0-only
+
+# Permissive, and here so a leg that is not about this licence is not about it.
+MIT
+LIST
+
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    git -C "$tmp" add -A
+    # --locked is what the shipped script passes, so the fixture is given the
+    # lock file it would otherwise refuse the absence of. Offline because the
+    # workspace depends on nothing outside itself, which is what makes a cargo
+    # leg cheap enough to run once per case.
+    (cd "$tmp/server" && cargo generate-lockfile --offline -q)
+
+    printf '%s\n' "$tmp"
+}
+
+base=$(build_the_base)
+
+fixture() {
+    tmp=$(mktemp -d)
+    rmdir "$tmp"
+    cp -R "$base" "$tmp"
+    printf '%s\n' "$tmp"
+}
+
+# Run the way the workflow runs it, which is the file itself rather than an
+# interpreter handed the file. Passing it to sh works on a script the tree has
+# not marked executable, so a proof written that way is green on a tree where
+# every one of these jobs fails with a permission error. That is not a
+# hypothetical: it is how these three scripts first reached a runner.
+scan() {
+    where=$1
+    rule=$2
+    "$root/licence-scan" "$rule" "$where"
+}
+
+echo "prove-licences: the header rule"
+
+tree=$(fixture)
+expect_green "a tree whose every source file carries the identifier passes" scan "$tree" headers
+
+tree=$(fixture)
+printf '%s\n' '//! The fixture crate.' > "$tree/server/crates/app/src/lib.rs"
+git -C "$tree" add -A
+expect_red_saying "a source file with no licence header is refused" \
+    'SPDX-License-Identifier: AGPL-3.0-only' scan "$tree" headers
+
+tree=$(fixture)
+printf '%s\n%s\n' '// SPDX-License-Identifier: MIT' '//! The fixture crate.' \
+    > "$tree/server/crates/app/src/lib.rs"
+git -C "$tree" add -A
+expect_red_saying "a header naming another licence is refused rather than counted as present" \
+    'has to be "// SPDX-License-Identifier: AGPL-3.0-only"' scan "$tree" headers
+
+tree=$(fixture)
+printf '%s\n%s\n' '#!/bin/sh' 'echo fixture' > "$tree/script"
+git -C "$tree" add -A
+expect_red_saying "a script with no header under its shebang is refused, and it is line 2 that is named" \
+    'script line 2' scan "$tree" headers
+
+# The kernel reads a shebang on the first line and nowhere else, so a header
+# above it would stop the file being a script. This leg is what says the rule
+# knows that: the same identifier, one line too high, is not accepted.
+tree=$(fixture)
+printf '%s\n%s\n%s\n' '#!/bin/sh' 'echo fixture' '# SPDX-License-Identifier: AGPL-3.0-only' \
+    > "$tree/script"
+git -C "$tree" add -A
+expect_red_saying "a script carrying the identifier somewhere other than under its shebang is refused" \
+    'script line 2' scan "$tree" headers
+
+tree=$(fixture)
+sed -i 's/^license = "AGPL-3.0-only"$/license = "MIT"/' "$tree/server/Cargo.toml"
+git -C "$tree" add -A
+expect_red_saying "manifests that disagree about the licence are refused before any file is judged" \
+    'One of the two layers is under a licence the other does not know about' scan "$tree" headers
+
+tree=$(fixture)
+rm "$tree/server/crates/app/src/lib.rs" "$tree/script"
+git -C "$tree" add -A
+expect_red_saying "a register holding nothing is refused rather than passing an empty tree" \
+    'Failing closed rather than passing an empty register' scan "$tree" headers
+
+echo "prove-licences: the tool that writes the header"
+
+tree=$(fixture)
+printf '%s\n' '//! The fixture crate.' > "$tree/server/crates/app/src/lib.rs"
+git -C "$tree" add -A
+"$root/licence-apply" "$tree" >/dev/null
+expect_green "the shipped tool turns a tree the header rule refuses into one it accepts" \
+    scan "$tree" headers
+expect_green_saying "running it again writes nothing" \
+    '0 files written' "$root/licence-apply" "$tree"
+
+tree=$(fixture)
+printf '%s\n%s\n' '// SPDX-License-Identifier: MIT' '//! The fixture crate.' \
+    > "$tree/server/crates/app/src/lib.rs"
+git -C "$tree" add -A
+expect_green_saying "a header naming another licence is left alone rather than rewritten" \
+    'already names an identifier' "$root/licence-apply" "$tree"
+
+echo "prove-licences: the dependency rule"
+
+tree=$(fixture)
+expect_green "a tree whose every declared licence is on the list passes" scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|"license": "MIT"|"license": "SSPL-1.0"|' "$tree/client/package-lock.json"
+expect_red_saying "a client dependency under a licence with no entry is refused" \
+    'licences-allowed does not carry every part of that' scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|"license": "MIT"|"license": "SSPL-1.0"|' "$tree/client/package-lock.json"
+printf '\n%s\n%s\n' '# The reason somebody wrote down.' 'SSPL-1.0' >> "$tree/licences-allowed"
+expect_green "the same dependency, once its licence carries a reason, is accepted" \
+    scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|"license": "MIT"|"license": "SSPL-1.0"|' "$tree/client/package-lock.json"
+printf '\n%s\n' 'SSPL-1.0' >> "$tree/licences-allowed"
+expect_red_saying "an entry added to the list with no reason above it is refused" \
+    'has no reason on the line above it' scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|"license": "MIT"|"license": "MIT OR SSPL-1.0"|' "$tree/client/package-lock.json"
+expect_green "an alternative where one side is on the list is accepted" scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|"license": "MIT"|"license": "MIT AND SSPL-1.0"|' "$tree/client/package-lock.json"
+expect_red_saying "a combination where one side is not on the list is refused" \
+    'licences-allowed does not carry every part of that' scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|, "license": "MIT"||' "$tree/client/package-lock.json"
+expect_red_saying "a dependency declaring no licence at all is refused" \
+    'declares no licence at all' scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's|, "license": "MIT"||' "$tree/client/package-lock.json"
+printf '\n%s\n%s\n' '# Taken anyway, and here is why.' 'package permissive' >> "$tree/licences-allowed"
+expect_green "the same dependency, named in the list with a reason, is accepted" \
+    scan "$tree" dependencies
+
+tree=$(fixture)
+sed -i 's/^license.workspace = true$/license = "SSPL-1.0"/' "$tree/server/crates/app/Cargo.toml"
+expect_red_saying "a crate in the server workspace under a licence with no entry is refused" \
+    'licences-allowed does not carry every part of that' scan "$tree" dependencies
+
+tree=$(fixture)
+printf '%s\n' '# Nothing but a comment.' > "$tree/licences-allowed"
+expect_red_saying "a list holding no entry is refused rather than passing every dependency" \
+    'Failing closed' scan "$tree" dependencies
+
+if [ "$failed" -eq 0 ]; then
+    echo "prove-licences: every leg green. The header rule, the tool that satisfies it, and the dependency rule each refused what they name and passed the neighbour that differs by one thing."
+else
+    echo "prove-licences: a leg failed. A gate that has stopped refusing what it names goes on passing, which is why this runs." >&2
+    exit 1
+fi

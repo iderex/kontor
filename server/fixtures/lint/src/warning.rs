@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Refused because server/Cargo.toml sets `warnings = "deny"`.
 //
 // unused_variables is a warning in every Rust toolchain and is fatal only

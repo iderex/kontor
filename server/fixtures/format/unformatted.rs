@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // The file the server formatter has to refuse, and it is not part of any crate:
 // server/Cargo.toml names crates/* and fixtures/lint as its members, so nothing
 // compiles this and `cargo fmt --all` never reaches it. Only ./prove-quality

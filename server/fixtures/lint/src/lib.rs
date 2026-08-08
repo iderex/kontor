@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // The one-change neighbours are always compiled; the arms that must be refused
 // are behind features that are off unless ./prove-quality asks for one.
 //

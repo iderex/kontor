@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # The pull request body checks, shown to bite.
 #
 #     prove-pr-body

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Money, dates and moments, with the rules of
 //! docs/decisions/0005-money-and-time.md expressed as types.
 //!
