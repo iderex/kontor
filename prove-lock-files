@@ -1,0 +1,203 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The two lock file gates, shown to bite.
+#
+#     prove-lock-files
+#
+# `build` installs both layers with the flag that refuses a lock file which does
+# not match the manifest beside it: `cargo build --locked` for the server and
+# `npm ci` for the client. Both are one word away from an install that quietly
+# resolves a new version instead, which is the shape a compromised dependency
+# arrives in, and neither refusal had anything showing it still refuses.
+#
+# Each leg builds a fixture package, runs the shipped flag against it and reads
+# the exit code. Every fixture depends on a directory beside it rather than on a
+# registry, so no leg reaches a network and none of them is faster or slower
+# depending on what a cache happens to hold.
+#
+# Two legs per toolchain do the placing rather than only the refusing. The
+# drifted fixture is run a second time with the flag off and is required to
+# pass, so a leg cannot be satisfied by a toolchain that refused for some other
+# reason, and the corrected neighbour is required to pass, so it cannot be
+# satisfied by one that refuses everything.
+#
+# WHAT NO LEG HERE READS IS `build`. The flags are written there, this script
+# runs them against fixtures of its own, and nothing joins the two: a `build`
+# that dropped `--locked` or reached for `npm install` would leave every leg
+# below green. What that costs is stated rather than left to be discovered, and
+# the register of which command carries which flag is `build` itself.
+#
+# POSIX sh, matching the scripts it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+expect_green() {
+    what=$1
+    shift
+    if (cd "$fixture" && "$@") >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass)"
+    fi
+}
+
+# A refusal is read for its reason as well as its exit code. Both toolchains
+# have several ways to fail in a directory that is missing something, and a leg
+# named for the lock file rule must not be satisfied by one of the others.
+expect_red_saying() {
+    what=$1
+    saying=$2
+    shift 2
+    if out=$( (cd "$fixture" && "$@") 2>&1 ); then
+        fail "$what (it passed, and it was supposed to be refused)"
+        return
+    fi
+    case "$out" in
+        *"$saying"*) pass "$what" ;;
+        *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$saying')" ;;
+    esac
+}
+
+# A crate with one dependency, which is a directory beside it. The lock is
+# generated from the manifest, so the fixture starts in the state the rule is
+# about: the two agree.
+rust_fixture() {
+    fixture=$(mktemp -d)
+    mkdir -p "$fixture/src" "$fixture/dep/src"
+
+    cat > "$fixture/dep/Cargo.toml" <<'MANIFEST'
+[package]
+name = "dep-one"
+version = "0.0.0"
+edition = "2024"
+MANIFEST
+    echo 'pub fn one() {}' > "$fixture/dep/src/lib.rs"
+
+    rust_manifest "$fixture" 'dep-one = { path = "dep" }'
+    echo 'pub fn fixture() {}' > "$fixture/src/lib.rs"
+
+    (cd "$fixture" && cargo generate-lockfile --offline) >/dev/null 2>&1
+}
+
+rust_manifest() {
+    cat > "$1/Cargo.toml" <<MANIFEST
+[package]
+name = "fixture"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+$2
+MANIFEST
+}
+
+# A second directory dependency, added to the manifest and to nothing else.
+# One dependency the lock has never seen is the whole of the drift: it is what a
+# hand edited manifest looks like, and what a merge that took one side of a
+# dependency change looks like.
+rust_drift() {
+    mkdir -p "$fixture/dep-two/src"
+    cat > "$fixture/dep-two/Cargo.toml" <<'MANIFEST'
+[package]
+name = "dep-two"
+version = "0.0.0"
+edition = "2024"
+MANIFEST
+    echo 'pub fn two() {}' > "$fixture/dep-two/src/lib.rs"
+    rust_manifest "$fixture" 'dep-one = { path = "dep" }
+dep-two = { path = "dep-two" }'
+}
+
+echo "prove-lock-files: the server lock"
+
+rust_fixture
+expect_green "a crate whose lock matches its manifest builds under --locked" \
+    cargo build --locked --offline
+
+rust_drift
+expect_red_saying "a dependency added to the manifest alone is refused" \
+    "--locked" \
+    cargo build --locked --offline
+
+expect_green "the same fixture builds with --locked off" \
+    cargo build --offline
+
+rust_fixture
+rm "$fixture/Cargo.lock"
+expect_red_saying "an absent lock file is refused rather than written" \
+    "--locked" \
+    cargo build --locked --offline
+
+rust_fixture
+rust_drift
+(cd "$fixture" && cargo generate-lockfile --offline) >/dev/null 2>&1
+expect_green "the corrected neighbour builds under --locked" \
+    cargo build --locked --offline
+
+# The client half. `npm ci` is the refusal and `npm install` is the word it is
+# one word away from, so the two are what the legs below run.
+node_fixture() {
+    fixture=$(mktemp -d)
+    mkdir -p "$fixture/dep-one" "$fixture/dep-two"
+    printf '{"name":"dep-one","version":"1.0.0"}\n' > "$fixture/dep-one/package.json"
+    printf '{"name":"dep-two","version":"1.0.0"}\n' > "$fixture/dep-two/package.json"
+
+    node_manifest "$fixture" '"dep-one": "file:dep-one"'
+    (cd "$fixture" && npm install --package-lock-only --offline) >/dev/null 2>&1
+}
+
+node_manifest() {
+    cat > "$1/package.json" <<MANIFEST
+{
+  "name": "fixture",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": { $2 }
+}
+MANIFEST
+}
+
+node_drift() {
+    node_manifest "$fixture" '"dep-one": "file:dep-one", "dep-two": "file:dep-two"'
+}
+
+echo "prove-lock-files: the client lock"
+
+node_fixture
+expect_green "a package whose lock matches its manifest installs under npm ci" \
+    npm ci --offline --ignore-scripts
+
+node_drift
+expect_red_saying "a dependency added to the manifest alone is refused" \
+    "in sync" \
+    npm ci --offline --ignore-scripts
+
+expect_green "the same fixture installs under npm install" \
+    npm install --offline --ignore-scripts
+
+node_fixture
+rm "$fixture/package-lock.json"
+expect_red_saying "an absent lock file is refused rather than written" \
+    "can only install with an existing package-lock.json" \
+    npm ci --offline --ignore-scripts
+
+node_fixture
+node_drift
+(cd "$fixture" && npm install --package-lock-only --offline) >/dev/null 2>&1
+expect_green "the corrected neighbour installs under npm ci" \
+    npm ci --offline --ignore-scripts
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-lock-files: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-lock-files: every leg did what it says."

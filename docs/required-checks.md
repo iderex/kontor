@@ -165,6 +165,14 @@ Those two are the whole of the difference between the ten workflows
 check run on the pull request event above. Every other workflow the repository
 knows about is represented in the set.
 
+Both counts in that sentence are the ones read at `fb5cf5a4`, and one gate has
+landed since. `supply-chain.yml` reports under `Prove the lock file gates bite`
+and triggers on the pull request event, so it joins the set the paragraphs above
+describe rather than the two exceptions beside it. The numbers are deliberately
+not rewritten here, because a number in this file is what went stale the last
+time and the two commands above are what answer it at the commit a reader
+actually holds.
+
 ## What each requirement costs
 
 The cost of requiring a check is what it blocks. These are read as a
