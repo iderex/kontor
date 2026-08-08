@@ -1,0 +1,181 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The module graph gate, shown to bite.
+#
+#     prove-layout
+#
+# Every leg builds a fixture graph, runs the shipped scanner against it and
+# reads the exit code. No leg restates a rule, so a placement loosened in
+# layout-scan reddens the leg that depended on it rather than passing quietly.
+#
+# The fixture is a directory of manifests and nothing else. layout-scan reads
+# the manifests rather than a built graph, so a fixture holding an edge that
+# would not compile, or one that cargo would refuse as a cycle, is still a
+# fixture the scanner can be asked about. That is the whole reason the fixture
+# is not a crate added to this workspace: a real crate depending the wrong way
+# would either be refused by the gate it is meant to prove or would need an
+# exclusion, and an exclusion list is the thing that quietly grows.
+#
+# Every refusal leg reads what the scanner said as well as that it said no. The
+# scanner has several refusals and one edit can trip more than one of them, so
+# an exit code alone would let a leg named for the sideways rule be satisfied by
+# the unplaced rule and go on passing after the sideways rule was removed.
+#
+# Each refusal leg is followed by its corrected neighbour: the same fixture with
+# that one edge removed, which has to pass. A checker that refused everything
+# would satisfy every red leg and no green one.
+#
+# POSIX sh, matching the script it proves, and for the same reason: a leg is an
+# exit code and a string from another program.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (it was refused, and it was supposed to pass)"
+    fi
+}
+
+expect_red_saying() {
+    what=$1
+    saying=$2
+    shift 2
+    if out=$("$@" 2>&1); then
+        fail "$what (it passed, and it was supposed to be refused)"
+        return
+    fi
+    case "$out" in
+        *"$saying"*) pass "$what" ;;
+        *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$saying')" ;;
+    esac
+}
+
+# One manifest per crate, holding the package name and nothing the scanner does
+# not read. The directory is given the crate's own name here, unlike the tree,
+# where server/crates/store holds kontor-store; the scanner reads the name out
+# of the target's manifest rather than off the path, so both shapes work and
+# this one keeps the fixture readable.
+crate() {
+    mkdir -p "$1/$2"
+    printf '[package]\nname = "%s"\nversion = "0.0.0"\n\n[dependencies]\n' "$2" > "$1/$2/Cargo.toml"
+}
+
+edge() {
+    printf '%s = { path = "../%s" }\n' "$3" "$3" >> "$1/$2/Cargo.toml"
+}
+
+# The graph this tree holds today, written out so a leg can add one edge to it
+# and change nothing else. If the shipped graph moves, the first leg below goes
+# red against the real tree and says so.
+base() {
+    dir=$1
+    for name in kontor kontor-api kontor-connector kontor-metadata kontor-money \
+                kontor-record kontor-reporting kontor-store kontor-workflow; do
+        crate "$dir" "$name"
+    done
+    edge "$dir" kontor kontor-api
+    edge "$dir" kontor-api kontor-metadata
+    edge "$dir" kontor-api kontor-record
+    edge "$dir" kontor-api kontor-reporting
+    edge "$dir" kontor-api kontor-workflow
+    edge "$dir" kontor-metadata kontor-store
+    edge "$dir" kontor-record kontor-metadata
+    edge "$dir" kontor-record kontor-store
+    edge "$dir" kontor-reporting kontor-record
+    edge "$dir" kontor-workflow kontor-record
+}
+
+# A refusal leg and its corrected neighbour, from one description of the edge.
+one_edge_case() {
+    what=$1
+    saying=$2
+    from=$3
+    to=$4
+
+    tmp=$(mktemp -d)
+    base "$tmp"
+    edge "$tmp" "$from" "$to"
+    expect_red_saying "$what" "$saying" "$root/layout-scan" "$tmp"
+    rm -rf "$tmp"
+
+    tmp=$(mktemp -d)
+    base "$tmp"
+    expect_green "the same graph without that one edge passes" "$root/layout-scan" "$tmp"
+    rm -rf "$tmp"
+}
+
+echo "prove-layout: the graph this tree holds"
+
+expect_green "the server's own module graph passes" "$root/layout-scan"
+
+tmp=$(mktemp -d)
+base "$tmp"
+expect_green "a fixture mirroring it passes" "$root/layout-scan" "$tmp"
+rm -rf "$tmp"
+
+echo "prove-layout: the edges the stack refuses"
+
+one_edge_case "an edge pointing up the stack is refused" \
+    "points up the stack" kontor-store kontor-record
+
+one_edge_case "an edge across one level of the stack is refused" \
+    "points sideways" kontor-reporting kontor-workflow
+
+one_edge_case "an edge into the API layer is refused" \
+    "points up the stack" kontor-record kontor-api
+
+one_edge_case "an edge into the composition root is refused" \
+    "nothing depends on the composition root" kontor-api kontor
+
+one_edge_case "the composition root reaching past the API layer is refused" \
+    "reaches the stack through its top" kontor kontor-record
+
+one_edge_case "an edge out of the vocabulary is refused" \
+    "beside the stack rather than in it" kontor-money kontor-store
+
+one_edge_case "an edge into the connector module is refused" \
+    "nothing depends on the connector module" kontor-record kontor-connector
+
+echo "prove-layout: what the scanner refuses to guess"
+
+tmp=$(mktemp -d)
+base "$tmp"
+crate "$tmp" kontor-somewhere-else
+expect_red_saying "a crate the stack does not place is refused" \
+    "does not place" "$root/layout-scan" "$tmp"
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+base "$tmp"
+edge "$tmp" kontor-record kontor-gone
+expect_red_saying "an edge to a crate that is not there is refused" \
+    "does not exist" "$root/layout-scan" "$tmp"
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+expect_red_saying "a directory holding no manifest is refused rather than reported clean" \
+    "Failing closed" "$root/layout-scan" "$tmp"
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+rm -rf "$tmp"
+expect_red_saying "a directory that is not there is refused" \
+    "is not a directory" "$root/layout-scan" "$tmp"
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-layout: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-layout: every leg did what it says."
