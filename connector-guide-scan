@@ -1,0 +1,261 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# A connector in the tree with no guide is refused here, and a guide that says
+# something its connector's declaration does not is refused with it.
+#
+# Run from anywhere:
+#
+#     connector-guide-scan
+#     connector-guide-scan --write
+#     connector-guide-scan --root <directory>
+#
+# WHAT THIS IS FOR. docs/decisions/0011-connectors.md decided that a connector
+# declares what crosses the boundary where a machine reads it, and
+# server/crates/connector holds the refusal that reads it. That is the half a
+# reviewer needs. #89 is the other half: an operator deciding whether to connect
+# their mailbox reads prose, before they do it rather than afterwards, and a
+# connector that shipped without any is a connector nobody outside this
+# repository can weigh.
+#
+# WHAT IT REFUSES, and each one has a leg in ./prove-connector-guides:
+#
+#     guide-missing                a connector crate with no docs/connectors/<id>.md
+#     guide-without-a-connector    a guide naming no connector in the tree
+#     heading-missing              a guide missing a heading the template asks for
+#     boundary-block-missing       a guide with no generated block, or half of one
+#     boundary-block-stale         a generated block that is not what the declaration says
+#
+# The last two are what make the guide unable to drift from the code, which is
+# the condition in #89 those rules exist for. --write rewrites the block from the
+# declaration, so there is one spelling of it rather than one per author, and it
+# is idempotent.
+#
+# THE HEADINGS ARE NOT WRITTEN HERE. They are read out of
+# docs/connector-guide-template.md, which is the thing that asks for them, in the
+# same way pr-body-scan reads .github/pull_request_template.md. A heading added
+# to the template is required from that commit, and a list in this file could
+# only drift against it.
+#
+# WHAT READS THE DECLARATION. cargo, through `cargo metadata`, which prints
+# `package.metadata` as JSON out of its own TOML parse. This file does not read
+# TOML and does not re-implement the reader in server/crates/connector: that one
+# judges whether the declaration was made, in full, in the closed line shape it
+# names, and it refuses in the default suite before this ever runs. So a tree
+# that passes both has a declaration cargo and that reader agree about. On a tree
+# where only this one runs, a declaration cargo accepts and that reader refuses
+# would be rendered here without complaint, and the repair is to run the suite
+# rather than to teach this file the other check's rules.
+#
+# WHAT IT CANNOT JUDGE. That a heading is present is a fact about the bytes. That
+# what is written under it is true, complete, or about this connector is not, and
+# no reading of a document decides it. The declaration itself carries the same
+# bound and 0011 states it: nothing reads a declaration against what the code
+# does. A reviewer is the whole mechanism for both, and no issue is open to
+# change that because nothing could.
+#
+# POSIX sh around a node program, matching test-scan, and for its reason: the
+# authority for what a connector is and what it declared is cargo, that is JSON,
+# and this tree pins node and does not require jq.
+#
+# ./prove-connector-guides is what shows this file bites, and it runs this file
+# rather than a copy of its rules.
+set -eu
+
+mode=check
+root=.
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --write) mode=write; shift ;;
+        --root) root=$2; shift 2 ;;
+        *)
+            echo "connector-guide-scan: $1 is not one of --write or --root. The rules are not selectable: a run that judged some of them would print the same verdict as one that judged all of them." >&2
+            exit 2
+            ;;
+    esac
+done
+
+cd "$(CDPATH= cd "$root" && pwd)"
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "connector-guide-scan: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+command -v node >/dev/null 2>&1 || {
+    echo "connector-guide-scan: node is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+manifest=server/Cargo.toml
+[ -f "$manifest" ] || manifest=Cargo.toml
+
+cargo metadata --format-version 1 --no-deps --manifest-path "$manifest" \
+    | MODE="$mode" node -e '
+const fs = require("node:fs");
+const path = require("node:path");
+
+// The three names this file shares with the crate that holds the rules. They are
+// repeated here because sh cannot read a Rust constant, and the repetition is
+// what ./prove-connector-guides has a leg against: a prefix changed there and
+// not here stops this file seeing any connector at all.
+const CRATE_PREFIX = "kontor-connector-";
+const GUIDES = path.join("docs", "connectors");
+const TEMPLATE = path.join("docs", "connector-guide-template.md");
+
+const OPEN = "<!-- connector boundary: generated from the declaration, and a hand edit is refused -->";
+const CLOSE = "<!-- connector boundary: ends -->";
+
+// The order is the order a reader wants the answers in, so it is the order the
+// declaration is rendered in rather than the order cargo happens to print.
+const ROWS = [
+  ["Purpose", "purpose"],
+  ["Destination", "destination"],
+  ["Outbound", "outbound"],
+  ["Inbound", "inbound"],
+  ["Credential", "credential"],
+];
+
+const refusals = [];
+const refuse = (rule, subject, detail) => refusals.push(`${rule}: ${subject}: ${detail}`);
+
+function headings() {
+  let template;
+  try {
+    template = fs.readFileSync(TEMPLATE, "utf8");
+  } catch {
+    return null;
+  }
+  return template
+    .split("\n")
+    .filter((line) => line.startsWith("## "))
+    .map((line) => line.slice(3).trim());
+}
+
+// A cell in a pipe table cannot hold a bar. Nothing else in a declaration needs
+// escaping, because the value is one line by the time cargo has parsed it.
+const cell = (value) => String(value).split("|").join("\\|");
+
+function block(declaration) {
+  const lines = [OPEN, "", "| Question | What the declaration answers |", "| --- | --- |"];
+  for (const [label, key] of ROWS) {
+    lines.push(`| ${label} | ${cell(declaration[key] ?? "")} |`);
+  }
+  lines.push("", CLOSE);
+  return lines.join("\n");
+}
+
+let raw = "";
+process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+  const meta = JSON.parse(raw);
+  const wanted = headings();
+
+  if (wanted === null || wanted.length === 0) {
+    process.stderr.write(
+      `connector-guide-scan: ${TEMPLATE} is not there or asks for no heading, so the heading rule would refuse nothing. Failing closed rather than passing every guide.\n`,
+    );
+    process.exit(1);
+  }
+
+  const connectors = [];
+  for (const pkg of meta.packages) {
+    if (!pkg.name.startsWith(CRATE_PREFIX)) continue;
+    const declaration = (pkg.metadata || {}).connector || {};
+    // The id the guide is filed under is the declared one. Where the declaration
+    // is absent or unnamed the crate name carries the answer, so the refusal
+    // below names a path rather than nothing at all.
+    const id = declaration.id || pkg.name.slice(CRATE_PREFIX.length);
+    connectors.push({ id, crate: pkg.name, manifest: pkg.manifest_path, declaration });
+  }
+
+  let written = 0;
+
+  for (const connector of connectors) {
+    const guide = path.join(GUIDES, `${connector.id}.md`);
+    let text;
+    try {
+      text = fs.readFileSync(guide, "utf8");
+    } catch {
+      refuse(
+        "guide-missing",
+        connector.crate,
+        `there is no ${guide}. ${TEMPLATE} is the shape of one, and an operator deciding whether to turn this on has nothing to read without it.`,
+      );
+      continue;
+    }
+
+    for (const heading of wanted) {
+      if (!text.split("\n").some((line) => line.trim() === `## ${heading}`)) {
+        refuse("heading-missing", guide, `no "## ${heading}", which ${TEMPLATE} asks every guide for.`);
+      }
+    }
+
+    const from = text.indexOf(OPEN);
+    const to = text.indexOf(CLOSE);
+    if (from < 0 || to < 0 || to < from) {
+      refuse(
+        "boundary-block-missing",
+        guide,
+        `no generated block, or only one of its two markers. It is written by "connector-guide-scan --write" and it is what stops this guide saying something ${connector.manifest} does not.`,
+      );
+      continue;
+    }
+
+    const found = text.slice(from, to + CLOSE.length);
+    const expected = block(connector.declaration);
+    if (found === expected) continue;
+
+    if (process.env.MODE === "write") {
+      fs.writeFileSync(guide, text.slice(0, from) + expected + text.slice(to + CLOSE.length));
+      written += 1;
+      continue;
+    }
+
+    refuse(
+      "boundary-block-stale",
+      guide,
+      `the generated block is not what the declaration in ${connector.manifest} says. Run "connector-guide-scan --write" rather than editing it, because a guide edited by hand is a guide that can disagree with the code.`,
+    );
+  }
+
+  // The other direction, so the register cannot quietly accumulate a guide for a
+  // connector that was removed or renamed. The template is not in this directory
+  // for exactly this reason.
+  const filed = new Set(connectors.map((c) => `${c.id}.md`));
+  let present = [];
+  try {
+    present = fs.readdirSync(GUIDES).filter((name) => name.endsWith(".md"));
+  } catch {
+    present = [];
+  }
+  for (const name of present) {
+    if (filed.has(name)) continue;
+    refuse(
+      "guide-without-a-connector",
+      path.join(GUIDES, name),
+      `no crate named ${CRATE_PREFIX}... declares the id this guide is filed under. A guide for a connector that is not in the tree is a guide nobody can check against anything.`,
+    );
+  }
+
+  if (refusals.length > 0) {
+    for (const line of refusals) process.stderr.write(`connector-guide-scan: ${line}\n`);
+    process.stderr.write(
+      "connector-guide-scan: an operator reads the guide before they turn a connector on, and a guide that is absent or disagrees with the declaration is read at exactly the moment it cannot be corrected.\n",
+    );
+    process.exit(1);
+  }
+
+  if (process.env.MODE === "write") {
+    process.stdout.write(
+      `connector-guide-scan: ${connectors.length} connector(s), ${written} generated block(s) rewritten from the declaration.\n`,
+    );
+    return;
+  }
+
+  const subject = connectors.length === 0
+    ? "no crate in this workspace is named as a connector, so the guide rules judged nothing"
+    : `${connectors.length} connector(s), each with a guide carrying every heading and the block the declaration renders to`;
+  process.stdout.write(
+    `connector-guide-scan: ${subject}. Whether a guide is true is not decided here.\n`,
+  );
+});
+'

@@ -109,6 +109,36 @@ macro. Nothing is exempt from the encoding rule by detection, which is
 deliberate: a detector reading a mangled file as binary would exempt exactly the
 file the rule exists for.
 
+A connector carries two things, and only one of them is code. Two more commands
+are about the other one:
+
+    ./connector-guide-scan
+    ./connector-guide-scan --write
+    ./prove-connector-guides
+
+`docs/decisions/0011-connectors.md` decided that a connector declares what
+crosses the boundary in its own manifest, and the default suite refuses one that
+has not. That is what a reviewer reads. An operator deciding whether to connect
+their mailbox reads prose instead, and #89 is where that is asked for: one guide
+per connector, at `docs/connectors/<id>.md`.
+
+The first refuses a connector crate with no guide, a guide naming no connector,
+a guide missing a heading, and a guide whose boundary block is not what the
+declaration says. The headings are read out of
+`docs/connector-guide-template.md` rather than written into the check, so a
+heading added there is required from that commit. The boundary block is
+rendered from what cargo resolved out of the manifest, so the guide cannot say
+something the code does not, and `--write` is what puts it there: a hand edit is
+refused rather than kept. The third is the evidence, against fixture trees it
+builds rather than against this tree, which is the whole evidence today because
+no crate here is named as a connector and the scan prints that it judged
+nothing.
+
+What neither can judge is whether a guide is true. That a heading is present is a
+fact about the bytes; that what is written under it describes this connector is
+not, and the declaration carries the same bound in its own record. A reader is
+the whole mechanism for both halves.
+
 Formatting and lint are two more commands, and they are two rather than one
 because they answer different questions. A formatter makes the tree consistent;
 a lint gate refuses shapes that are consistent and still wrong.
@@ -339,6 +369,7 @@ The tree it builds:
     SECURITY.md
     build
     client
+    connector-guide-scan
     coverage
     docs
     format
@@ -347,6 +378,7 @@ The tree it builds:
     licences-allowed
     lint
     pr-body-scan
+    prove-connector-guides
     prove-determinism
     prove-headless
     prove-licences

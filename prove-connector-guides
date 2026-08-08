@@ -1,0 +1,257 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The guide rules, shown to bite.
+#
+# A gate that has never refused anything is a claim, not a control. Every leg
+# here runs the shipped scan against a fixture tree and reads the exit code; none
+# of them re-implements a rule, so a rule loosened in connector-guide-scan is
+# loosened here too and the leg that depended on it goes red.
+#
+# Run from anywhere:
+#
+#     ./prove-connector-guides
+#
+# The fixtures are built rather than tracked, for the reason ./prove-headless
+# gives: a tracked crate named as a connector with no guide is exactly what the
+# scan refuses, so committing one would redden the real run for the sake of
+# proving that it can. This repository holds no connector at all today, so the
+# run against the tree judges nothing and these fixtures are the whole evidence.
+#
+# The template is copied into each fixture rather than written here. That is
+# deliberate: the headings a guide owes are the template's to state, and a copy
+# of them in this file would be a second statement that drifts.
+#
+# POSIX sh, matching ./prove-headless, because the legs are exit codes from
+# another program.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+template=$root/docs/connector-guide-template.md
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "prove-connector-guides: cargo is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+[ -f "$template" ] || {
+    echo "prove-connector-guides: $template is not there, and every fixture below is built from it." >&2
+    exit 1
+}
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (exit $?, and it was supposed to pass)"
+    fi
+}
+
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+open_marker='<!-- connector boundary: generated from the declaration, and a hand edit is refused -->'
+close_marker='<!-- connector boundary: ends -->'
+
+# A workspace with one crate. $1 is the crate name, so a case can ask the
+# question of a crate that is not named as a connector without changing anything
+# else, and $2 says whether the crate declares anything.
+workspace() {
+    tmp=$1
+    crate=$2
+    declares=$3
+
+    mkdir -p "$tmp/crates/probe/src" "$tmp/docs/connectors"
+    cat > "$tmp/Cargo.toml" <<'EOF'
+[workspace]
+resolver = "3"
+members = ["crates/probe"]
+EOF
+    {
+        echo '[package]'
+        echo "name = \"$crate\""
+        echo 'version = "0.0.0"'
+        echo 'edition = "2024"'
+        echo 'publish = false'
+    } > "$tmp/crates/probe/Cargo.toml"
+    if [ "$declares" = declares ]; then
+        cat >> "$tmp/crates/probe/Cargo.toml" <<'EOF'
+
+[package.metadata.connector]
+id = "mailbox"
+purpose = "match messages in the mailbox the operator named to the records they concern"
+destination = "the IMAP server named in this connector's configuration, and no other address"
+outbound = "none"
+inbound = "message metadata, being sender, recipients, subject and time"
+credential = "the mailbox credential the operator entered, scoped to this connector"
+EOF
+    fi
+    echo '' > "$tmp/crates/probe/src/lib.rs"
+    cp "$template" "$tmp/docs/connector-guide-template.md"
+}
+
+# A guide carrying every heading the template asks for, and whatever the caller
+# wants between the markers. $2 is a heading to leave out, or empty for none.
+guide() {
+    file=$1
+    without=$2
+    between=$3
+
+    {
+        echo "# The mailbox connector"
+        echo
+        while IFS= read -r heading; do
+            [ -n "$heading" ] || continue
+            [ "$heading" != "$without" ] || continue
+            echo "## $heading"
+            echo
+            echo "What a person needs to know before they turn this on."
+            echo
+        done <<EOF
+$(sed -n 's/^## //p' "$template")
+EOF
+        case "$between" in
+            none) ;;
+            half)
+                echo "$open_marker"
+                echo
+                ;;
+            *)
+                echo "$open_marker"
+                echo
+                printf '%s\n' "$between"
+                echo
+                echo "$close_marker"
+                ;;
+        esac
+    } > "$file"
+}
+
+echo "prove-connector-guides: a connector with no guide"
+
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+expect_red "a connector crate with no guide is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+
+# The near miss on the rule that decides what a connector even is. The same
+# crate, the same absent guide, and a name outside the prefix. 0011 states that
+# bound in its own words: a connector named something else is not seen, and a
+# reader is the whole mechanism for it.
+workspace "$tmp" probe-mailbox declares
+expect_green "a crate outside the naming rule, with no guide, is not this rule's business" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+echo "prove-connector-guides: what a guide owes"
+
+first_heading=$(sed -n 's/^## //p' "$template" | head -1)
+
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+guide "$tmp/docs/connectors/mailbox.md" "" ""
+expect_red "a guide whose generated block does not match the declaration is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+
+expect_green "--write rewrites the block from the declaration" \
+    sh "$root/connector-guide-scan" --root "$tmp" --write
+
+expect_green "the same guide then passes every rule" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+
+# Idempotence, read out of what the writer prints rather than asserted. A second
+# --write that rewrote the block again would mean the rendering and the check
+# disagree about what the declaration renders to.
+if sh "$root/connector-guide-scan" --root "$tmp" --write | grep -q '0 generated block(s) rewritten'; then
+    pass "a second --write rewrites nothing"
+else
+    fail "a second --write rewrites nothing (it rewrote the block again)"
+fi
+
+# The hand edit. One word changed inside the block, which is the shape somebody
+# reaches for when the declaration is inconvenient and the guide is nearer.
+sed -i 's/| Outbound | none |/| Outbound | nothing at all |/' "$tmp/docs/connectors/mailbox.md"
+expect_red "a generated block edited by hand is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+guide "$tmp/docs/connectors/mailbox.md" "$first_heading" ""
+sh "$root/connector-guide-scan" --root "$tmp" --write >/dev/null 2>&1 || true
+expect_red "a guide missing a heading the template asks for is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+guide "$tmp/docs/connectors/mailbox.md" "" none
+expect_red "a guide with no generated block is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+
+# The near miss beside it: the marker is there, so a check looking for the
+# opening line alone would be satisfied, and the block it opens never closes.
+guide "$tmp/docs/connectors/mailbox.md" "" half
+expect_red "a guide carrying only the opening marker is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+echo "prove-connector-guides: the other direction"
+
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+guide "$tmp/docs/connectors/mailbox.md" "" ""
+sh "$root/connector-guide-scan" --root "$tmp" --write >/dev/null
+cp "$tmp/docs/connectors/mailbox.md" "$tmp/docs/connectors/calendar.md"
+expect_red "a guide naming no connector in the tree is refused" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+# The template sits outside docs/connectors/ so that it is not read as a guide
+# for a connector nobody has written. This is the leg that says so.
+tmp=$(mktemp -d)
+workspace "$tmp" kontor-connector-mailbox declares
+guide "$tmp/docs/connectors/mailbox.md" "" ""
+sh "$root/connector-guide-scan" --root "$tmp" --write >/dev/null
+expect_green "the template itself is not read as a guide" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+
+# Fail closed rather than open. With no template there are no headings to
+# require, and a check that then required none would pass every guide.
+rm "$tmp/docs/connector-guide-template.md"
+expect_red "a missing template refuses rather than requiring no heading" \
+    sh "$root/connector-guide-scan" --root "$tmp"
+rm -rf "$tmp"
+
+echo "prove-connector-guides: the tree itself"
+
+expect_green "this repository passes the same scan" \
+    sh "$root/connector-guide-scan"
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-connector-guides: a leg above did not do what it says. The guide rules are not proven." >&2
+    exit 1
+fi
+
+echo "prove-connector-guides: every leg did what it says."

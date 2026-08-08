@@ -1,0 +1,76 @@
+# One refusal about the operator facing half of a connector, and the evidence
+# that it bites. A connector declares what crosses the boundary where a machine
+# reads it, which is the reviewer's half and is judged by the default suite. The
+# guide is what a person reads before they turn one on, and until this workflow
+# nothing refused a connector that shipped without one.
+#
+# Both jobs run a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+#
+# This repository holds no connector today, so the first job judges nothing and
+# says so in its own output. The second is the whole evidence that the rules
+# refuse anything, and it will stay that way until the first connector lands.
+name: connectors
+
+on:
+  # The pull request event, and the default branch on push, matching every other
+  # gate here: a commit that is in a pull request is judged once under each name,
+  # and the default branch is judged again when the merge lands on it.
+  # docs/required-checks.md is where that matters.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Neither job writes anything back: the writer is a local convenience
+# and a run that could push would erase the difference that is the finding.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guides:
+    name: Reject a connector with no guide, or a guide that disagrees with it
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. node is what reads cargo's JSON here.
+          node-version-file: .nvmrc
+
+      - name: Reject a connector with no guide, or a guide that disagrees with it
+        # The headings come from docs/connector-guide-template.md and the
+        # boundary block comes from the declaration cargo resolved, so neither
+        # is restated in a workflow file that would drift against it.
+        run: ./connector-guide-scan
+
+  proof:
+    name: Prove the connector guide rules bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # Each leg builds a fixture tree, runs the shipped scan against it and
+        # reads the exit code, so a rule loosened where it lives reddens the leg
+        # that depended on it rather than passing quietly.
+        run: ./prove-connector-guides
