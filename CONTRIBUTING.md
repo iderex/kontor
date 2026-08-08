@@ -188,10 +188,15 @@ which reads like a flake and passes on the next machine.
     ./test-scan
     ./prove-headless
 
-The second is the evidence that the first bites: an unmarked test that opens an
-outbound socket is refused, the same test marked for an outbound network is
-accepted, a marking naming something outside the four is refused, and a test
-that reaches for nothing passes.
+The second is the evidence that the first bites, in two groups because the scan
+carries two rules over one register of reaches. On a test target: an unmarked
+test that opens an outbound socket is refused, the same test marked for an
+outbound network is accepted, a marking naming something outside the four is
+refused, and a test that reaches for nothing passes. On a test inside a crate's
+`src/`, where no marking is possible: one that opens a socket is refused, the
+same one with the reach taken out passes, the same reach in library code beside
+a clean test module passes, and a test module declared as a file rather than
+written inline is followed into that file and refused there.
 
 Those two judge the source. What judges the environment is a third command and
 the evidence that it is doing anything:
@@ -228,10 +233,33 @@ passing, which is the case a single-sided check cannot see. The last pair is a
 cargo test target that opens a socket, which passes outside the seal and is red
 inside it.
 
-What no command here checks is a unit test inside a crate's `src/`, in a
-`#[cfg(test)]` module. It is part of the library target and cannot carry
-`required-features` at all, so there is nothing to check it against and a reader
-is the whole mechanism. #117 is where that half belongs.
+A unit test inside a crate's `src/`, in a `#[cfg(test)]` module, is part of the
+library target and cannot carry `required-features` at all. This passage said no
+command checked one and that a reader was the whole mechanism, which was true
+until `./test-scan` grew a second half for them. There is no marking to check
+such a test against, so the rule is the stricter one that it may not reach for
+any of the four, and the message it earns names the move to a target under
+`tests/` rather than a feature to add. A module written as `#[cfg(test)] mod
+name;` is followed into the file it names, and so is anything that file declares
+in turn.
+
+Two bounds on that half, stated because neither is visible from a green run.
+Ordinary library code under `src/` is not judged by either half: a crate that
+opens a socket outside a test earns nothing here, and the pattern over the tree
+that would refuse one is #113's. And the register of reaches is a floor rather
+than a guarantee, in both halves, since it holds the shapes somebody could
+plausibly write today and not one nobody has written yet.
+
+How much that half found to judge is printed rather than written here, in the
+second clause of the scan's own output, because a count in a document drifts
+against the tree the moment somebody writes the first such test:
+
+    ./test-scan
+
+While that clause says the half judged nothing, the only evidence it refuses
+anything is `./prove-headless` and its fixtures. That is the order the gap was
+closed in deliberately: before the first in-crate test arrives rather than after
+somebody has written one against no gate.
 
 Both are the server's. The client workspace has no tests and no runner, and #63
 is where its half belongs; a client leg that ran nothing and reported green
@@ -438,9 +466,11 @@ What is marked, and what each marked target needs:
     ./test --marked
 
 Three things carry that rule now, and they carry different halves of it.
-`./test-scan` refuses an unmarked test whose source reaches for one of the four,
-before anything is compiled. `./test-sealed` runs the suite where none of the
-three the environment can supply is there to reach. `./prove-headless` and
+`./test-scan` refuses an unmarked test target whose source reaches for one of
+the four, before anything is compiled, and refuses a test inside a crate's
+`src/` that reaches for one at all, since that one can carry no marking.
+`./test-sealed` runs the suite where none of the three the environment can
+supply is there to reach. `./prove-headless` and
 `./prove-sealed` are what say each of those still refuses what it names. The
 section above describes all four and is where the detail is; this is the rule in
 one sentence and the command that prints it.
