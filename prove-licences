@@ -162,10 +162,15 @@ fixture() {
     printf '%s\n' "$tmp"
 }
 
+# Run the way the workflow runs it, which is the file itself rather than an
+# interpreter handed the file. Passing it to sh works on a script the tree has
+# not marked executable, so a proof written that way is green on a tree where
+# every one of these jobs fails with a permission error. That is not a
+# hypothetical: it is how these three scripts first reached a runner.
 scan() {
     where=$1
     rule=$2
-    sh "$root/licence-scan" "$rule" "$where"
+    "$root/licence-scan" "$rule" "$where"
 }
 
 echo "prove-licences: the header rule"
@@ -219,18 +224,18 @@ echo "prove-licences: the tool that writes the header"
 tree=$(fixture)
 printf '%s\n' '//! The fixture crate.' > "$tree/server/crates/app/src/lib.rs"
 git -C "$tree" add -A
-sh "$root/licence-apply" "$tree" >/dev/null
+"$root/licence-apply" "$tree" >/dev/null
 expect_green "the shipped tool turns a tree the header rule refuses into one it accepts" \
     scan "$tree" headers
 expect_green_saying "running it again writes nothing" \
-    '0 files written' sh "$root/licence-apply" "$tree"
+    '0 files written' "$root/licence-apply" "$tree"
 
 tree=$(fixture)
 printf '%s\n%s\n' '// SPDX-License-Identifier: MIT' '//! The fixture crate.' \
     > "$tree/server/crates/app/src/lib.rs"
 git -C "$tree" add -A
 expect_green_saying "a header naming another licence is left alone rather than rewritten" \
-    'already names an identifier' sh "$root/licence-apply" "$tree"
+    'already names an identifier' "$root/licence-apply" "$tree"
 
 echo "prove-licences: the dependency rule"
 
