@@ -22,6 +22,15 @@
 # crate src/, which can carry no marking at all, and its legs are the ones that
 # say the refusal is about the test rather than about the file it sits in.
 #
+# Every leg runs the shipped scan the way ./test and the workflow run it, as a
+# path rather than as an argument to sh. That is not a style choice. This tree
+# has twice lost a set of jobs to a script committed 100644 in a clone that does
+# not carry the mode, on 2bbb79f and again while the connector guide rules were
+# landing, and a proof passing the file to sh is green on exactly that tree
+# because sh does not read the mode. Every leg here was written the losing way
+# until this commit; nothing was broken by it, because test-scan is marked, and
+# the leg that would have said so was the one that could not.
+#
 # POSIX sh, matching ./build, because the legs are exit codes from another
 # program.
 set -eu
@@ -109,9 +118,9 @@ EOF
     printf '%s\n' "$body" > "$tmp/crates/probe/tests/probe.rs"
 
     if [ "$expectation" = red ]; then
-        expect_red "$what" sh "$root/test-scan" --root "$tmp"
+        expect_red "$what" "$root/test-scan" --root "$tmp"
     else
-        expect_green "$what" sh "$root/test-scan" --root "$tmp"
+        expect_green "$what" "$root/test-scan" --root "$tmp"
     fi
 
     rm -rf "$tmp"
@@ -190,9 +199,9 @@ EOF
     fi
 
     if [ "$expectation" = red ]; then
-        expect_red "$what" sh "$root/test-scan" --root "$tmp"
+        expect_red "$what" "$root/test-scan" --root "$tmp"
     else
-        expect_green "$what" sh "$root/test-scan" --root "$tmp"
+        expect_green "$what" "$root/test-scan" --root "$tmp"
     fi
 
     rm -rf "$tmp"
@@ -258,10 +267,41 @@ src_case "the same reach in library code beside a clean test module is accepted"
 src_case "a test module declared as a file, reaching the network, is refused" \
     "$declares_a_test_module" "tests.rs" "$test_module_file" red
 
+echo "prove-headless: the harness runs the scan the way the workflow does"
+
+# The pair that says why every leg above is a path rather than an argument to sh.
+# Both halves run the same bytes and only the invocation differs, so the first
+# going red and the second staying green is the whole statement.
+#
+# It needs a filesystem that can take the executable bit off a file. Windows
+# cannot, and a pair asserted there would pass for a reason that has nothing to
+# do with the mode, so the probe below decides and the skip is printed rather
+# than swallowed.
+probe=$(mktemp -d)
+printf '#!/bin/sh\nexit 0\n' > "$probe/probe"
+chmod -x "$probe/probe"
+
+if [ -x "$probe/probe" ]; then
+    echo "  skip  a scan the tree did not mark executable is refused"
+    echo "  skip  the same file passed to sh is accepted"
+    echo "prove-headless: this filesystem cannot take the executable bit off a file, so the pair above was not run and nothing here says the mode is covered."
+else
+    cp "$root/test-scan" "$probe/test-scan"
+    chmod -x "$probe/test-scan"
+
+    expect_red "a scan the tree did not mark executable is refused" \
+        "$probe/test-scan"
+
+    expect_green "the same file passed to sh is accepted, which is why no leg here does that" \
+        sh "$probe/test-scan"
+fi
+
+rm -rf "$probe"
+
 echo "prove-headless: the tree itself"
 
 expect_green "every test target in this repository passes the same scan" \
-    sh "$root/test-scan"
+    "$root/test-scan"
 
 if [ "$failed" -ne 0 ]; then
     echo "prove-headless: a leg above did not do what it says. The marking is not proven." >&2

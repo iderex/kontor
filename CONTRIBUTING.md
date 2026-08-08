@@ -228,6 +228,15 @@ same one with the reach taken out passes, the same reach in library code beside
 a clean test module passes, and a test module declared as a file rather than
 written inline is followed into that file and refused there.
 
+A third pair is about the harness rather than the rule. Every leg runs the
+shipped scan as a path, the way `./test` and the workflow run it, and the pair
+shows why: the same file with its executable bit off is refused when run that
+way and accepted when passed to `sh`, so a proof written the second way is green
+on a tree whose scripts the workflow cannot execute. This project has lost jobs
+to that twice. The pair needs a filesystem that can take the bit off a file,
+which Windows cannot, and there it prints that it was skipped and that nothing
+in the run covers the mode.
+
 Those two judge the source. What judges the environment is a third command and
 the evidence that it is doing anything:
 
