@@ -1,0 +1,58 @@
+# One refusal over the comments in this directory, and the evidence that it
+# bites. The comments here are where every gate is argued and are the only place
+# some of those arguments exist, so a comment naming a file the tree does not
+# hold sends a reader to check a claim against a repository that is not this
+# one. That is what happened, in the file whose whole subject is the workflows,
+# and #156 is where it is recorded.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: workflow-comments
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every other gate here has: a commit in a pull request is judged once under
+  # each name, and the default branch is judged again when the merge lands.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Both jobs read the checkout, and the second builds its fixtures
+# under the runner's own temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Reject a workflow comment naming a file the tree does not hold
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+      - name: Reject a workflow comment naming a file the tree does not hold
+        run: ./workflow-scan
+
+  proof:
+    name: Prove the workflow comment rule bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a repository holding one workflow file, runs
+        # the shipped scanner against it and reads the exit code.
+        run: ./prove-workflow-scan

@@ -72,6 +72,8 @@
 /licence-apply            text eol=lf
 /prove-licences           text eol=lf
 /prove-lock-files         text eol=lf
+/workflow-scan            text eol=lf
+/prove-workflow-scan      text eol=lf
 
 # Not a script, and declared for the same reason all the same. Every line in it
 # is one entry or one entry's reason, read line by line by a program, and a

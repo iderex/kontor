@@ -1,0 +1,134 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The workflow comment rule, shown to bite.
+#
+#     prove-workflow-scan
+#
+# Each leg builds a throwaway repository holding one workflow file, runs the
+# shipped scanner against it and reads the exit code. No leg restates the rule,
+# so a rule loosened where it lives reddens the leg that depended on it rather
+# than passing quietly.
+#
+# Every red leg is followed by its one-change neighbour, which has to pass.
+# Without that pair a leg is also satisfied by a scanner that refuses every
+# comment it is given, and the near miss here is small on purpose: the same
+# sentence with the path corrected, which is the edit somebody will actually
+# make.
+#
+# The fixtures are repositories rather than loose files because the rule is
+# about what is TRACKED. A path that exists in a working tree and is not
+# committed is the reference a reader cannot follow, so a fixture that only
+# wrote the file would prove the wrong thing.
+#
+# POSIX sh, matching the script it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+# A repository holding the workflow file the case is about, plus whatever else
+# the case needs tracked beside it. The scanner is run from inside it and given
+# it as the root, which is the second argument text-scan takes for the same
+# reason.
+workflow_case() {
+    what=$1
+    expectation=$2
+    comment=$3
+    beside=${4-}
+    step=${5-true}
+
+    tmp=$(mktemp -d)
+    git -c init.defaultBranch=main init -q "$tmp"
+    # This machine's git may be set to rewrite line endings on the way in. The
+    # rule reads lines rather than bytes, so it would survive that, but the
+    # warning it prints on every fixture would bury the legs.
+    git -C "$tmp" config core.autocrlf false
+    mkdir -p "$tmp/.github/workflows"
+
+    cat > "$tmp/.github/workflows/subject.yml" <<CONTENT
+$comment
+name: subject
+
+on:
+  pull_request:
+
+jobs:
+  one:
+    name: One
+    runs-on: ubuntu-latest
+    steps:
+      - run: $step
+CONTENT
+
+    if [ -n "$beside" ]; then
+        mkdir -p "$tmp/$(dirname "$beside")"
+        echo 'beside' > "$tmp/$beside"
+    fi
+
+    git -C "$tmp" add -A
+
+    if out=$(sh "$root/workflow-scan" "$tmp" 2>&1); then
+        if [ "$expectation" = green ]; then
+            pass "$what"
+        else
+            fail "$what (it passed, and it was supposed to be refused)"
+        fi
+    else
+        if [ "$expectation" = red ]; then
+            case $out in
+                *"not a tracked file here"*) pass "$what" ;;
+                *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held 'not a tracked file here')" ;;
+            esac
+        else
+            fail "$what (it was refused, and it was supposed to pass)"
+        fi
+    fi
+
+    rm -rf "$tmp"
+}
+
+echo "prove-workflow-scan: a reference that resolves to nothing"
+
+workflow_case "a comment naming a workflow the tree does not hold is refused" \
+    red '# This gate exists because publish-beta.yml runs on every push to main.'
+
+workflow_case "the same sentence naming a workflow that is there is accepted" \
+    green '# This gate exists because subject.yml runs on every push to main.'
+
+workflow_case "a comment naming a document the tree does not hold is refused" \
+    red '# docs/nowhere.md is where this is argued.'
+
+workflow_case "the same sentence with the document tracked is accepted" \
+    green '# docs/nowhere.md is where this is argued.' \
+    'docs/nowhere.md'
+
+echo "prove-workflow-scan: what the rule deliberately does not reach"
+
+# The bound the scanner's own header states, kept as a leg so that widening the
+# rule later reddens something rather than quietly changing what a green run
+# means.
+workflow_case "a path outside a comment is passed over" \
+    green '# Nothing in this comment names a file. The step below names one that
+# is not there, on a line the rule does not read.' \
+    '' \
+    'cat docs/nowhere.md'
+
+workflow_case "a token with no extension the rule knows is passed over" \
+    green '# no_new_privs is set, and 1.26.1 is the version.'
+
+workflow_case "a bare workflow name resolves under .github/workflows" \
+    green '# subject.yml is this file, named the short way.'
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-workflow-scan: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-workflow-scan: every leg did what it says."
