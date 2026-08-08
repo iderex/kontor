@@ -302,6 +302,7 @@ The tree it builds:
     coverage
     docs
     format
+    layout-scan
     licence-apply
     licence-scan
     licences-allowed
@@ -309,6 +310,7 @@ The tree it builds:
     pr-body-scan
     prove-determinism
     prove-headless
+    prove-layout
     prove-licences
     prove-pr-body
     prove-quality
