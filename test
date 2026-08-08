@@ -30,6 +30,11 @@
 # adds no test rules of its own.
 set -eu
 
+marked_root=.
+if [ "${1-}" = "--marked" ] && [ -n "${2-}" ]; then
+    marked_root=$2
+fi
+
 cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 command -v cargo >/dev/null 2>&1 || {
@@ -37,33 +42,120 @@ command -v cargo >/dev/null 2>&1 || {
     exit 1
 }
 
-# What is marked, and what each marked target needs. Printed rather than written
-# into a document, because a list in a document drifts against the manifests and
-# the drift is invisible until somebody trusts the list.
+# What is marked, what each marked target needs, why it is marked, and how much
+# of the suite is left running with nothing outside the machine reached.
+#
+# Printed rather than written into a document, because a list in a document
+# drifts against the manifests and the drift is invisible until somebody trusts
+# the list. The proportion is printed for the same reason and for one more: a
+# number nobody can re-derive cannot be seen to have moved.
+#
+# A ROOT MAY BE GIVEN, and it is there so that ./prove-headless can point this
+# at a fixture workspace. A verb that can only be run against this tree is a
+# verb whose refusal can only be demonstrated by breaking this tree.
+#
+#     ./test --marked
+#     ./test --marked <root>
 if [ "${1-}" = "--marked" ]; then
     command -v node >/dev/null 2>&1 || {
         echo "test: node is not on the path, and it is what reads cargo's JSON here. CONTRIBUTING.md says what to install." >&2
         exit 1
     }
-    cargo metadata --format-version 1 --no-deps --manifest-path server/Cargo.toml \
+    cd "$(CDPATH= cd "$marked_root" && pwd)"
+    marked_manifest=server/Cargo.toml
+    [ -f "$marked_manifest" ] || marked_manifest=Cargo.toml
+    cargo metadata --format-version 1 --no-deps --manifest-path "$marked_manifest" \
         | node -e '
+const fs = require("node:fs");
+
+// WHERE THE REASON LIVES AND WHY THERE. On the line directly above
+// required-features, in the crate manifest, as "# reason:" and then the reason.
+// Directly above rather than anywhere in the block, so that moving a marking
+// moves its justification with it: that is the rule this tree already applies
+// to a lint suppression and to an escape from the client type system, and it is
+// the rule for the same reason. Nothing in cargo metadata carries a comment, so
+// the manifest is read as text.
+function reasonFor(manifestPath, targetName) {
+  const lines = fs.readFileSync(manifestPath, "utf8").split(/\r?\n/);
+  let inTestBlock = false;
+  let named = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (line.startsWith("[")) {
+      inTestBlock = line === "[[test]]";
+      named = false;
+      continue;
+    }
+    if (!inTestBlock) continue;
+    if (/^name\s*=/.test(line)) {
+      named = line.includes(`"${targetName}"`);
+      continue;
+    }
+    if (named && /^required-features\s*=/.test(line)) {
+      const above = (lines[i - 1] || "").trim();
+      const written = above.match(/^#\s*reason:\s*(\S.*)$/);
+      // An empty reason is refused as an absent one. A colon with nothing after
+      // it satisfies the shape of the rule and says nothing.
+      return written ? written[1].trim() : null;
+    }
+  }
+  return null;
+}
+
 let raw = "";
 process.stdin.on("data", (d) => (raw += d)).on("end", () => {
   const meta = JSON.parse(raw);
   const rows = [];
+  const unreasoned = [];
+  let targets = 0;
+
   for (const pkg of meta.packages) {
     for (const target of pkg.targets) {
       if (!target.kind.includes("test")) continue;
+      targets += 1;
       const marks = target["required-features"] || [];
-      if (marks.length > 0) rows.push(`${pkg.name}  ${target.name}  ${marks.join(" ")}`);
+      if (marks.length === 0) continue;
+      const why = reasonFor(pkg.manifest_path, target.name);
+      if (why === null) {
+        unreasoned.push(
+          `${pkg.manifest_path}: the [[test]] block for "${target.name}" is marked ${marks.join(" ")} and says nothing about why. Write "# reason:" and the reason on the line directly above required-features, so that moving the marking moves the reason with it.`,
+        );
+        continue;
+      }
+      rows.push({ pkg: pkg.name, target: target.name, marks: marks.join(" "), why });
     }
   }
-  if (rows.length === 0) {
-    process.stdout.write("test: no test target is marked, so ./test runs every one of them.\n");
-    return;
+
+  if (unreasoned.length > 0) {
+    for (const line of unreasoned) process.stderr.write(`test: ${line}\n`);
+    process.stderr.write(
+      "test: a marking with no reason keeps a target out of the default suite and leaves nobody able to judge whether it should be there. The register this command prints is what a reader checks, and an entry with no reason is the one they cannot check.\n",
+    );
+    process.exit(1);
   }
-  process.stdout.write("test: these targets are excluded from ./test, and this is what each needs.\n");
-  for (const row of rows) process.stdout.write(`  ${row}\n`);
+
+  const headless = targets - rows.length;
+  const share = targets === 0 ? "" : ` ${Math.round((headless / targets) * 100)}% of them`;
+
+  if (rows.length === 0) {
+    process.stdout.write(
+      `test: ${targets} test target(s), none of them marked, so ./test runs every one.\n`,
+    );
+  } else {
+    process.stdout.write("test: these targets are excluded from ./test, and this is what each needs and why.\n");
+    for (const row of rows) {
+      process.stdout.write(`  ${row.pkg}  ${row.target}  ${row.marks}\n`);
+      process.stdout.write(`    reason: ${row.why}\n`);
+    }
+    process.stdout.write(
+      `test: ${headless} of ${targets} test target(s) run with nothing outside this machine reached,${share}.\n`,
+    );
+  }
+
+  // THE BOUND ON THAT NUMBER, printed with it rather than left to a document.
+  process.stdout.write(
+    "test: counted in targets rather than in tests, because cargo says how many targets exist without building one and says nothing about how many tests are inside them. It is the server workspace only; the client has no suite, which is #63.\n",
+  );
 });
 '
     exit 0

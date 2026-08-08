@@ -211,6 +211,26 @@ than listed here, because a list in a document drifts against the manifests:
 
     ./test --marked
 
+That prints each marked target, what it needs, and why it is marked, and it
+refuses a marked target that says nothing about the why. The reason goes on the
+line directly above `required-features` in the crate manifest, as `reason:`
+after the comment mark, which is the same rule as for a lint suppression and for
+an escape from the client type system and it is there for the same reason:
+moving the marking moves its justification with it. An empty reason is refused
+as an absent one, and a comment above the marking that is not a reason is
+refused too, because a target kept out of the default suite with no reason
+recorded is one nobody reading the register can judge.
+
+It also prints how many test targets run with nothing outside the machine
+reached, as a count and as a proportion, so a later decline shows up as a
+number rather than as a feeling. Two bounds are printed with it rather than
+left here. It is counted in targets and not in tests, because cargo says how
+many targets exist without building one and says nothing about how many tests
+are inside them. And it is the server workspace, which is the only one with a
+suite. Nothing refuses a decline in that number: over a handful of targets a
+floor moves by a whole target at a time, so it would refuse the next marked
+target rather than a trend, and #117 is where the audit of that number belongs.
+
 `./test` runs the scan itself before it compiles anything, so the refusal
 arrives with the cause rather than as a connection error in the middle of a run,
 which reads like a flake and passes on the next machine.
@@ -567,18 +587,21 @@ simulator or a database is marked for which of those it needs and is excluded
 from the default run by configuration rather than by a flag anybody has to
 remember.
 
-What is marked, and what each marked target needs:
+What is marked, what each marked target needs, why it is marked, and how much of
+the suite is left running with nothing outside the machine reached:
 
     ./test --marked
 
-Three things carry that rule now, and they carry different halves of it.
+Four things carry that rule now, and they carry different halves of it.
 `./test-scan` refuses an unmarked test target whose source reaches for one of
 the four, before anything is compiled, and refuses a test inside a crate's
 `src/` that reaches for one at all, since that one can carry no marking.
+`./test --marked` refuses a marked target that does not say why it is marked, so
+the register a reader checks the marking against has no entry they cannot check.
 `./test-sealed` runs the suite where none of the three the environment can
 supply is there to reach. `./prove-headless` and
 `./prove-sealed` are what say each of those still refuses what it names. The
-section above describes all four and is where the detail is; this is the rule in
+section above describes all five and is where the detail is; this is the rule in
 one sentence and the command that prints it.
 
 This passage said the opposite until this commit: that nothing enforced the rule

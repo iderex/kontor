@@ -167,6 +167,100 @@ marking_case "a marking naming something outside the four is refused" \
 marking_case "an unmarked test that reaches for nothing is accepted" \
     "$reaches_nothing" "" green
 
+echo "prove-headless: why a target is marked"
+
+# The register ./test --marked prints is what a reader checks the marking
+# against, and an entry saying only what a target needs is one they cannot
+# check. These legs are about the line above required-features rather than about
+# any reach, so the fixture test reaches for nothing and the marking is legal in
+# every one of them: what moves between the legs is the comment alone.
+reason_case() {
+    what=$1
+    blocks=$2
+    targets=$3
+    expectation=$4
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/crates/probe/src" "$tmp/crates/probe/tests"
+    cat > "$tmp/Cargo.toml" <<EOF
+[workspace]
+resolver = "3"
+members = ["crates/probe"]
+EOF
+    {
+        echo '[package]'
+        echo 'name = "probe"'
+        echo 'version = "0.0.0"'
+        echo 'edition = "2024"'
+        echo 'publish = false'
+        echo
+        echo '[features]'
+        echo 'needs-postgres = []'
+        echo
+        printf '%s\n' "$blocks"
+    } > "$tmp/crates/probe/Cargo.toml"
+    echo '' > "$tmp/crates/probe/src/lib.rs"
+    for name in $targets; do
+        printf '%s\n' "$reaches_nothing" > "$tmp/crates/probe/tests/$name.rs"
+    done
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" "$root/test" --marked "$tmp"
+    else
+        expect_green "$what" "$root/test" --marked "$tmp"
+    fi
+
+    rm -rf "$tmp"
+}
+
+reason_case "a marked target with a reason above its marking is accepted" \
+    '[[test]]
+name = "probe"
+# reason: it speaks to a real database, which a fresh clone does not have
+required-features = ["needs-postgres"]' 'probe' green
+
+reason_case "the same target with the reason line taken out is refused" \
+    '[[test]]
+name = "probe"
+required-features = ["needs-postgres"]' 'probe' red
+
+# The near miss. Somebody who commented the block has satisfied every shape a
+# looser rule would look for and has still not said why this target is out of
+# the default suite.
+reason_case "a comment above the marking that is not a reason is refused" \
+    '[[test]]
+name = "probe"
+# The integration suite.
+required-features = ["needs-postgres"]' 'probe' red
+
+# An empty reason is refused as an absent one, which is the rule
+# client/escape-scan already applies to the other place this tree asks for one.
+reason_case "a reason with nothing after the colon is refused" \
+    '[[test]]
+name = "probe"
+# reason:
+required-features = ["needs-postgres"]' 'probe' red
+
+# The reason belongs to the target rather than to the file. One block carries
+# one and the other does not, and a rule reading the manifest for the words
+# rather than for the block would accept both.
+reason_case "a second marked target with no reason of its own is refused" \
+    '[[test]]
+name = "probe"
+# reason: it speaks to a real database, which a fresh clone does not have
+required-features = ["needs-postgres"]
+
+[[test]]
+name = "second"
+required-features = ["needs-postgres"]' 'probe second' red
+
+# The leg that stops the group being satisfied by a verb that refuses whatever
+# it is given: an unmarked target owes no reason, because it is not out of the
+# default suite and there is nothing for a reader to judge.
+reason_case "an unmarked target with no reason anywhere is accepted" \
+    '[[test]]
+name = "probe"' 'probe' green
+
 echo "prove-headless: a test inside a crate src/"
 
 # The same shape without a test target. What these cases are about is a test that

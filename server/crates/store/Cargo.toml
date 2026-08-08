@@ -22,4 +22,5 @@ needs-postgres = []
 
 [[test]]
 name = "needs_postgres"
+# reason: it speaks to a real PostgreSQL, which a fresh clone does not have and which no in-process substitute stands in for, since what it is here to check is the database behaving as itself
 required-features = ["needs-postgres"]
