@@ -120,6 +120,27 @@ jobs:
         # pushing rather than a connection error in the middle of a run.
         run: ./test-scan
 
+  marked-register:
+    name: Reject a marked test target that does not say why
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. node is what reads cargo's JSON here.
+          node-version-file: .nvmrc
+
+      - name: Reject a marked test target that does not say why
+        # The register a reader checks the marking against, and the refusal that
+        # keeps every entry in it checkable. It prints the proportion of the
+        # suite left running with nothing outside the machine reached, which is
+        # the number a later decline shows up in.
+        run: ./test --marked
+
   marking-proof:
     name: Prove the marking bites
     runs-on: ubuntu-latest
