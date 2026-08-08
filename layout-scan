@@ -1,0 +1,195 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# One refusal over the server's module graph: an edge that points anywhere the
+# stack in docs/layout.md does not allow.
+#
+# Run from anywhere. With no argument it judges this repository:
+#
+#     layout-scan
+#
+# An argument names a directory of crate directories to judge instead, and
+# defaults to server/crates beside this script. It exists so prove-layout can
+# point the shipped scanner at a fixture graph rather than at a copy of these
+# rules, and so that the fixture can hold an edge this tree would refuse without
+# that edge having to be added to the tree to prove the refusal works.
+#
+# What it reads is the manifests rather than a built graph. Every edge inside
+# this workspace is a path dependency, so the edge is a line of text before it
+# is anything a compiler knows about, and reading the text is what lets the same
+# command judge a fixture that was never built. docs/layout.md names
+# `cargo tree` as what prints the graph for a person; this is the same graph
+# read by a machine that has to refuse one arrow rather than describe all of
+# them.
+#
+# POSIX sh, the means the other gates at this root already established, and it
+# fits for the same reason: the question is which of two names sits lower in a
+# fixed table, the input is a handful of manifests, and a program in either
+# toolchain would have to be built before it could refuse anything.
+#
+# Cargo refuses a cycle on its own, so the arrows cannot point both ways at
+# once. It does not refuse one arrow pointing the wrong way, which is the
+# failure this file exists for. prove-layout is what says this file bites.
+#
+# What it does not judge: a workspace member outside the directory it is given.
+# `server/Cargo.toml` also holds `fixtures/lint`, which is the lint gate's
+# subject rather than a module of the stack, and a module added as a member from
+# some third path would not be seen here at all. That hole is stated in
+# docs/layout.md rather than closed, because closing it means deciding where a
+# module may live, which this file is not the place to decide.
+set -eu
+
+usage() {
+    echo "usage: layout-scan [directory of crate directories]" >&2
+    exit 2
+}
+
+[ $# -le 1 ] || usage
+
+here=$(CDPATH= cd "$(dirname "$0")" && pwd)
+crates=${1:-$here/server/crates}
+
+[ -d "$crates" ] || {
+    echo "layout-scan: $crates is not a directory. Failing closed rather than reporting a graph nobody looked at." >&2
+    exit 1
+}
+
+# The stack of docs/layout.md, bottom first, plus the three placements that
+# section describes as beside the stack rather than in it. A level is a number
+# because the only question ever asked of two crates in the stack is which one
+# sits lower.
+#
+# `kontor` is the binary, and where it goes is a decision this file makes rather
+# than one the note already made. The note says nothing depends on the API
+# layer and calls it the module with no dependents inside the server; the binary
+# depends on it, which is what a composition root is for. Read as a sentence
+# about the library modules the note's rule holds, and the binary is outside the
+# stack: nothing may depend on it, and it reaches the stack through the top and
+# nowhere else, so a binary cannot become the second route into the record
+# module that the note's own reasoning is about. docs/layout.md carries that
+# narrowing in its own words.
+place() {
+    case "$1" in
+        kontor-store)     echo 'stack 1' ;;
+        kontor-metadata)  echo 'stack 2' ;;
+        kontor-record)    echo 'stack 3' ;;
+        kontor-reporting) echo 'stack 4' ;;
+        kontor-workflow)  echo 'stack 4' ;;
+        kontor-api)       echo 'stack 5' ;;
+        kontor)           echo 'root 6' ;;
+        kontor-money)     echo 'vocabulary 0' ;;
+        kontor-connector) echo 'isolated 0' ;;
+        *)                echo 'unplaced 0' ;;
+    esac
+}
+
+kind() { place "$1" | cut -d' ' -f1; }
+level() { place "$1" | cut -d' ' -f2; }
+
+# The package name a manifest declares, which is what the placement table is
+# written in. The directory a crate sits in is not that name in this tree -
+# server/crates/store holds kontor-store - so the name is read rather than
+# guessed from the path.
+crate_name() {
+    sed -n 's/^name = "\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
+refuse() {
+    echo "layout-scan: $1" >&2
+    echo "  docs/layout.md, 'The direction dependencies run inside the server', is where that rule is argued." >&2
+    refused=$((refused + 1))
+}
+
+refused=0
+crates_seen=0
+edges_seen=0
+
+for manifest in "$crates"/*/Cargo.toml; do
+    [ -f "$manifest" ] || continue
+    crates_seen=$((crates_seen + 1))
+
+    from=$(crate_name "$manifest")
+    [ -n "$from" ] || {
+        echo "layout-scan: $manifest declares no package name, so nothing can be said about the edges leaving it." >&2
+        refused=$((refused + 1))
+        continue
+    }
+
+    if [ "$(kind "$from")" = unplaced ]; then
+        refuse "$from is a crate the stack does not place. A module the note says nothing about is a module whose edges nothing can judge, so it is refused here rather than passing as a crate with no rule."
+        continue
+    fi
+
+    # Every path dependency, whichever table it was declared under. A
+    # dev-dependency on another module is an edge in the module graph too, and
+    # judging only [dependencies] would leave a route in that a test could open
+    # and nothing would refuse. Nothing in this tree declares one today.
+    for target in $(sed -n 's|.*path = "\.\./\([A-Za-z0-9_.-]*\)".*|\1|p' "$manifest"); do
+        target_manifest="$crates/$target/Cargo.toml"
+        [ -f "$target_manifest" ] || {
+            refuse "$from depends on ../$target, and $target_manifest does not exist. An edge to nothing is an edge nothing can place."
+            continue
+        }
+
+        to=$(crate_name "$target_manifest")
+        edges_seen=$((edges_seen + 1))
+
+        from_kind=$(kind "$from")
+        to_kind=$(kind "$to")
+
+        if [ "$to_kind" = unplaced ]; then
+            refuse "$from depends on $to, which is a crate the stack does not place."
+            continue
+        fi
+
+        case "$to_kind" in
+            root)
+                refuse "$from depends on $to, and nothing depends on the composition root. The binary composes the stack; a module that reaches back into it has made the top of the stack reachable from below."
+                continue
+                ;;
+            isolated)
+                refuse "$from depends on $to, and nothing depends on the connector module. What it holds is the declaration every connector carries; an edge into it now is a placement chosen by a dependency rather than by the work that needs it."
+                continue
+                ;;
+        esac
+
+        # The vocabulary is reachable from anywhere and reaches nothing, which
+        # is what makes it a vocabulary rather than a level.
+        if [ "$to_kind" = vocabulary ]; then
+            continue
+        fi
+
+        case "$from_kind" in
+            vocabulary|isolated)
+                refuse "$from depends on $to, and it is beside the stack rather than in it. A module that depends on nothing inside the server is what lets every level use it without choosing a level for it."
+                continue
+                ;;
+            root)
+                if [ "$(level "$to")" != 5 ]; then
+                    refuse "$from depends on $to, and the composition root reaches the stack through its top and nowhere else. An edge past the API layer is a second route into the modules below it, which is the thing the stack exists to refuse."
+                fi
+                continue
+                ;;
+        esac
+
+        from_level=$(level "$from")
+        to_level=$(level "$to")
+
+        if [ "$to_level" -gt "$from_level" ]; then
+            refuse "$from depends on $to, which points up the stack. The arrows all point one way, so a change to a request shape can never reach the record module."
+        elif [ "$to_level" -eq "$from_level" ]; then
+            refuse "$from depends on $to, which points sideways across one level of the stack. Two modules at one level share what is under them and nothing else."
+        fi
+    done
+done
+
+if [ "$crates_seen" -eq 0 ]; then
+    echo "layout-scan: $crates holds no crate manifest, so this run would refuse nothing. Failing closed rather than passing an empty graph." >&2
+    exit 1
+fi
+
+if [ "$refused" -gt 0 ]; then
+    echo "layout-scan: $refused edge(s) the stack refuses, out of $edges_seen read across $crates_seen crate(s)." >&2
+    exit 1
+fi
+
+echo "layout-scan: $edges_seen edge(s) across $crates_seen crate(s), every one pointing where docs/layout.md says it may."

@@ -153,6 +153,33 @@ of that script carries the command showing why the linter is the one it is, and
 `./prove-quality` has a leg that demonstrates the silence rather than asserting
 it.
 
+Where the server's modules may depend on each other is a rule too, and it has
+two commands of its own:
+
+    ./layout-scan
+    ./prove-layout
+
+`docs/layout.md` states a stack and says the arrows all point one way. Cargo
+refuses a cycle, so the arrows cannot point both ways at once, and it refuses
+nothing about a single arrow pointing the wrong way. `./layout-scan` reads the
+manifests under `server/crates/` and refuses an edge that points up a level,
+one that points sideways between two modules at the same level, one into the
+binary that composes the server, one into the connector module, one out of the
+money module, one to a crate that is not there, and a crate the note does not
+place at all. It reads the manifests rather than a built graph, so it answers
+before anything is compiled and it can be pointed at a directory of manifests
+given as its argument.
+
+That last refusal is the one worth knowing about before you add a module. A new
+crate under `server/crates/` is refused until `layout-scan` says where it sits,
+which is deliberate: a module whose level nobody chose is a module whose edges
+nothing can judge.
+
+`./prove-layout` is the evidence. Every leg builds a fixture graph, runs the
+shipped scanner against it, and reads both the exit code and the reason, so a
+leg named for one refusal cannot be satisfied by a different one. Each refusal
+leg is followed by the same graph with that one edge removed, which has to pass.
+
 The suites are two commands, and the second one is named for what it needs:
 
     ./test

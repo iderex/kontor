@@ -1,0 +1,63 @@
+# One refusal over the server's module graph, and the evidence that it bites.
+#
+# docs/layout.md states a stack and says the arrows all point one way. Cargo
+# refuses a cycle on its own and refuses nothing about a single arrow pointing
+# the wrong way, so until this workflow the note was the only thing that said an
+# edge was forbidden, and a reader was the whole mechanism.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: architecture
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # the other gates here settled on: a commit is judged once under each name,
+  # and a name carried by two runs of two events cannot be required of a merge
+  # without first settling how the platform resolves the duplicate.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Both jobs read manifests and build their fixtures inside the
+# runner's own temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  edges:
+    name: Reject a module edge the stack does not allow
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+      - name: Reject a module edge the stack does not allow
+        # Nothing is built. The edges are path dependencies in the manifests,
+        # so the graph is text before it is anything a compiler knows about,
+        # and this reads the text.
+        run: ./layout-scan
+
+  proof:
+    name: Prove the module graph gate bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a fixture graph, runs the shipped scanner
+        # against it and reads the exit code and the reason, so a placement
+        # loosened where it lives reddens the leg that depended on it.
+        run: ./prove-layout
