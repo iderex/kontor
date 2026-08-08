@@ -1,0 +1,76 @@
+# Three refusals over the tracked documentation, and the evidence that they
+# bite. A decision record under docs/decisions/ is what later work is argued
+# against, docs/layout.md is where a boundary is reasoned about, and
+# docs/licence.md is what an operator reads before deploying. A document
+# pointing at a file the tree does not hold costs the reader who trusted it the
+# time to find that out, and #115 is where that is asked for.
+#
+# The record rules are judged against docs/decisions/0001-means.md, which is the
+# record that states how a record is named and which header block it carries.
+# The check reads the field names out of that file rather than holding a copy,
+# so a header block changed there is required from that commit.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: documentation
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every other gate here has: a commit in a pull request is judged once under
+  # each name, and the default branch is judged again when the merge lands.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Every job reads the checkout, and the last one builds its fixtures
+# under the runner's own temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  references:
+    name: Reject a documentation reference that leads nowhere
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+      - name: Reject a markdown link that resolves to no tracked file
+        run: ./docs-scan links
+      - name: Reject a document named in prose that the tree does not hold
+        run: ./docs-scan documents
+
+  records:
+    name: Reject a decision record that is not shaped like one
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject a decision record that is not shaped like one
+        run: ./docs-scan records
+
+  proof:
+    name: Prove the documentation rules bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a repository holding the documents its case
+        # is about, runs the shipped scanner against it and reads the exit code.
+        run: ./prove-docs-scan

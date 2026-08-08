@@ -363,6 +363,69 @@ the run rather than misleading a reader, and an issue number, which would have
 to be resolved against the tracker rather than against the checkout. #156 is
 where both bounds are recorded.
 
+The documentation is read by three rules of its own, two about what a document
+points at and one about how a decision record is shaped:
+
+    ./docs-scan
+    ./docs-scan links
+    ./docs-scan documents
+    ./docs-scan records
+    ./prove-docs-scan
+
+The first takes the target of every markdown link in a tracked document and
+refuses one that resolves to no tracked file, because a link an author wrote is
+a promise that it leads somewhere. A target naming a scheme is left alone, since
+resolving one reaches the network and every rule here answers from the checkout.
+
+The second reads the prose of every tracked document and refuses a token ending
+in `.md` that carries a directory and names no tracked file. Three shapes are
+not that, and each says so in its own way. A token carrying a placeholder, in
+angle brackets or written in upper case where the naming rule asks for lower,
+stands for a name rather than being one. A token followed by `under #<n>` names
+a document an issue owes, which is the numbering rule working rather than a dead
+reference; the issue is not resolved, because that reaches the tracker. And a
+token inside an indented block or a fence belongs to a command, which fails for
+the reader who runs it rather than misleading the reader who does not, which is
+the bound `workflow-scan` states over `run:` lines for the same reason.
+
+Only a token ending in `.md` is judged, and the narrowing is deliberate. The
+tokens in these documents that carry a slash and are not paths in this tree
+include a repository name, a check name with spaces in it, an absolute path on
+the machine and an argument to a command that reaches a service, so a rule
+guessing at which of those was meant to resolve would refuse the sentence
+explaining it. A document is the case worth holding, because a document is
+followed rather than executed.
+
+The third refuses a decision record that is not named `NNNN-slug.md`, one whose
+title number disagrees with the number it is filed under, two records written
+under one number, and a header block whose fields are missing, empty, out of
+order, or not the ones a record carries. Which fields those are is read out of
+`docs/decisions/0001-means.md`, the record that states the rule, rather than
+written into the check, so a field added there is required from that commit.
+That record is judged against itself and passes by construction, and it is the
+one file here whose header block nothing checks.
+
+`./prove-docs-scan` is the evidence, against repositories it builds rather than
+against this tree. Every leg that expects a refusal is followed by its
+one-change neighbour, and one leg renames a field in the fixture exemplar and
+requires the rename to propagate, which is what says the check holds no copy of
+the header block rather than a well-timed one.
+
+What none of it judges is whether a document is true. That a heading is present
+is a fact about the bytes; that what is written under it still describes what
+this tree does is not, and no reading of the tree decides it. A reader is the
+whole mechanism for that half.
+
+What #115 asks for and is not here, said plainly because a green run says
+nothing about any of it. A fragment on a link target is not judged, since the
+spelling of an anchor belongs to the renderer and nothing tracked here writes
+one. Nothing checks that a record carries its alternative and the condition that
+would reverse the decision: three of the records in this tree carry neither
+under any heading a pattern could find, so that rule as stated would refuse the
+tree for what it already is. There is no word list. And no check says whether a
+command shown in a document is executed anywhere or marked as illustrative,
+which needs a suite that can run one.
+
 The tree it builds:
 
     git ls-tree --name-only HEAD
@@ -380,6 +443,7 @@ The tree it builds:
     client
     connector-guide-scan
     coverage
+    docs-scan
     docs
     format
     licence-apply
@@ -389,6 +453,7 @@ The tree it builds:
     pr-body-scan
     prove-connector-guides
     prove-determinism
+    prove-docs-scan
     prove-headless
     prove-licences
     prove-lock-files

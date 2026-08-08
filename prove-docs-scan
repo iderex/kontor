@@ -1,0 +1,496 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The three documentation rules, shown to bite.
+#
+#     prove-docs-scan
+#
+# Each leg builds a throwaway repository holding the documents the case is
+# about, runs the shipped scanner against it and reads the exit code. No leg
+# restates a rule, so a rule loosened where it lives reddens the leg that
+# depended on it rather than passing quietly.
+#
+# Every red leg is followed by its one-change neighbour, which has to pass.
+# Without that pair a leg is also satisfied by a scanner that refuses whatever
+# it is given, and the near miss here is small on purpose: the same sentence
+# with the path corrected, or the same record with the number corrected, which
+# is the edit somebody will actually make.
+#
+# The fixtures are repositories rather than loose files because every rule is
+# about what is TRACKED. A document that exists in a working tree and was never
+# committed is exactly the reference a reader cannot follow, so a fixture that
+# only wrote the file would prove the weaker thing, and one leg below is that
+# distinction on its own.
+#
+# The record legs write their own exemplar, and one of them renames a field in
+# it and requires the rename to propagate. That leg is what says the scanner
+# holds no copy of the header block: a scanner carrying its own list would stay
+# green while the exemplar moved underneath it.
+#
+# This tree is not what any leg judges. A run against the real documents proves
+# the state of those documents on the day it ran, and the rule is what this
+# file is about.
+#
+# POSIX sh, matching the script it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+count=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+# A repository the case writes its documents into. Line ending rewriting is
+# turned off because this machine may be set to it, and the warning git prints
+# on every fixture would bury the legs.
+fixture() {
+    count=$((count + 1))
+    tmp="$work/$count"
+    stage=-A
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    mkdir -p "$tmp/docs/decisions"
+}
+
+# Content arrives on standard input, so a fixture document is written the way it
+# will be read rather than through a layer of quoting.
+put() {
+    mkdir -p "$tmp/$(dirname "$1")"
+    cat > "$tmp/$1"
+}
+
+# The record every other record is judged against. A leg that wants a different
+# header block writes its own instead of calling this.
+exemplar() {
+    put docs/decisions/0001-means.md <<'RECORD'
+# 0001. The means
+
+Status: accepted
+Issue: #1
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+The exemplar this fixture judges the other records against.
+RECORD
+}
+
+judge() {
+    what=$1
+    expectation=$2
+    rule=$3
+    needle=$4
+
+    # Every leg but one tracks what it wrote. The exception sets stage to the
+    # subset it wants tracked, because the rule is about what is committed and a
+    # fixture that tracked everything could not put that distinction under it.
+    git -C "$tmp" add $stage
+
+    if out=$(sh "$root/docs-scan" "$rule" "$tmp" 2>&1); then
+        if [ "$expectation" = green ]; then
+            pass "$what"
+        else
+            fail "$what (it passed, and it was supposed to be refused)"
+        fi
+    else
+        if [ "$expectation" = red ]; then
+            case $out in
+                *"$needle"*) pass "$what" ;;
+                *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$needle')" ;;
+            esac
+        else
+            fail "$what (it was refused, and it was supposed to pass)"
+        fi
+    fi
+}
+
+echo "prove-docs-scan: a link that leads nowhere"
+
+fixture
+put README.md <<'DOC'
+See [the notice](NOTICE.md) for what this is.
+DOC
+judge "a link to a document the tree does not hold is refused" \
+    red links "resolves to no tracked file"
+
+fixture
+put README.md <<'DOC'
+See [the notice](NOTICE.md) for what this is.
+DOC
+put NOTICE.md <<'DOC'
+The notice.
+DOC
+judge "the same link with the document tracked is accepted" \
+    green links ""
+
+fixture
+put README.md <<'DOC'
+See [the notice](NOTICE.md) for what this is.
+DOC
+: > "$tmp/NOTICE.md"
+stage=README.md
+judge "a link to a file that is present and untracked is refused" \
+    red links "resolves to no tracked file"
+
+fixture
+put docs/licence.md <<'DOC'
+The terms are in [LICENSE](../LICENSE) and a lawyer is who reads them.
+DOC
+put LICENSE <<'DOC'
+The terms.
+DOC
+judge "a link climbing out of its own directory to a tracked file is accepted" \
+    green links ""
+
+fixture
+put README.md <<'DOC'
+The [upstream project](https://example.invalid/somewhere.md) is elsewhere.
+DOC
+judge "a link naming a scheme is passed over" \
+    green links ""
+
+echo "prove-docs-scan: a document named in prose that is not there"
+
+fixture
+put README.md <<'DOC'
+The boundary is argued in docs/layout.md and nowhere else.
+DOC
+judge "a document named in prose that the tree does not hold is refused" \
+    red documents "is not a tracked document here"
+
+fixture
+put README.md <<'DOC'
+The boundary is argued in docs/layout.md and nowhere else.
+DOC
+put docs/layout.md <<'DOC'
+The layout.
+DOC
+judge "the same sentence with the document tracked is accepted" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+The boundary is argued in docs/layout.md under #42 and nowhere else.
+DOC
+judge "the same sentence declaring the issue that owes the document is accepted" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+Read what the layout note holds:
+
+    cat docs/layout.md
+DOC
+judge "the same path in an indented command is passed over" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+Read what the layout note holds:
+
+```
+cat docs/layout.md
+```
+DOC
+judge "the same path inside a fence is passed over" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+A connector guide is at docs/connectors/<id>.md, filed under the id it declares.
+DOC
+judge "a placeholder in angle brackets is passed over" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+A record is a file at docs/decisions/NNNN-slug.md, four digits and a slug.
+DOC
+judge "a placeholder written in upper case is passed over" \
+    green documents ""
+
+fixture
+put README.md <<'DOC'
+See NOTICE.md for what this is.
+DOC
+judge "a document named with no directory is passed over" \
+    green documents ""
+
+echo "prove-docs-scan: a decision record that is not shaped like one"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0003. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record whose title number disagrees with its filename is refused" \
+    red records "rather than with"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "the same record with the number corrected is accepted" \
+    green records ""
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record missing a field the exemplar carries is refused" \
+    red records "carries no Superseded by line"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Issue: #13
+Status: accepted
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record carrying the fields in another order is refused" \
+    red records "where the header block in"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status:
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record carrying a field with nothing after it is refused" \
+    red records "with nothing after it"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: the one about storage
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record naming no issue number is refused" \
+    red records "names no issue number"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## What this is about
+
+Something.
+RECORD
+judge "a record opening on a section the exemplar does not open on is refused" \
+    red records "which is what every record carries first"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+RECORD
+judge "a record with a header block and no decision under it is refused" \
+    red records "never reaches a section heading"
+
+fixture
+exemplar
+put docs/decisions/storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a record not named the way a record is named is refused" \
+    red records "is not named the way a decision record is named"
+
+fixture
+exemplar
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+put docs/decisions/0002-storage-again.md <<'RECORD'
+# 0002. Storage, again
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something else.
+RECORD
+judge "two records written under one number are refused" \
+    red records "are both written under number"
+
+echo "prove-docs-scan: the header block comes from the exemplar and not from the check"
+
+fixture
+put docs/decisions/0001-means.md <<'RECORD'
+# 0001. The means
+
+Status: accepted
+Issue: #1
+Supersedes: nothing
+Superseded by: nothing
+Reviewed: nobody
+
+## The decision
+
+The exemplar this fixture judges the other records against.
+RECORD
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a field added to the exemplar is required of every record from that commit" \
+    red records "carries no Reviewed line"
+
+fixture
+put docs/decisions/0001-means.md <<'RECORD'
+# 0001. The means
+
+Status: accepted
+Issue: #1
+Supersedes: nothing
+Superseded by: nothing
+Reviewed: nobody
+
+## The decision
+
+The exemplar this fixture judges the other records against.
+RECORD
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+Reviewed: nobody
+
+## The decision
+
+Something.
+RECORD
+judge "the same pair with the record carrying the added field is accepted" \
+    green records ""
+
+fixture
+put docs/decisions/0002-storage.md <<'RECORD'
+# 0002. Storage
+
+Status: accepted
+Issue: #13
+Supersedes: nothing
+Superseded by: nothing
+
+## The decision
+
+Something.
+RECORD
+judge "a tree holding records and no exemplar is refused rather than requiring nothing" \
+    red records "Failing closed rather than requiring nothing"
+
+echo "prove-docs-scan: a rule with nothing to judge says so"
+
+fixture
+put README.md <<'DOC'
+Nothing here names a document and nothing here is a link.
+DOC
+judge "a tree with no decision record judges nothing and passes" \
+    green records ""
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-docs-scan: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-docs-scan: every leg did what it says."
