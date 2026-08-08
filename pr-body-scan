@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # Three refusals over the body of a pull request. It reads the body and the
 # tracker, and nothing else: not the diff, not the commits, not the branch.
 #

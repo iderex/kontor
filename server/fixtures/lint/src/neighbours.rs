@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // The one-change neighbour of every arm in this crate, written the way the
 // shipped configuration asks for. These are compiled by every run, so a change
 // that made the lint gate refuse everything would redden the ordinary build

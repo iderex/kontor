@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # One command from a fresh clone to a green build of both layers.
 #
 # What it needs installed beforehand is in CONTRIBUTING.md and this script

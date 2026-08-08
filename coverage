@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # How much of the server the unit suite touches, and the floor it may not walk
 # under.
 #

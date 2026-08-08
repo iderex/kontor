@@ -1,0 +1,47 @@
+# Every licence a package in this tree may be under, and why each one is here.
+#
+# licence-scan reads this file and nothing else does. An entry is one line
+# holding one SPDX licence identifier, or `package <name>` for a dependency that
+# declares no licence at all and is taken anyway. The line immediately above an
+# entry is its reason, and licence-scan refuses an entry that has none, so a
+# licence cannot join this list without somebody writing down why it may.
+#
+# THE QUESTION EVERY REASON ANSWERS is whether this project can be distributed
+# as a whole under its own licence with that package inside it. It is not
+# whether the licence is well known, and it is not whether the package is
+# popular. A permissive licence is here because its terms are carried forward by
+# a stronger one; a copyleft licence is here only where it is the same one this
+# project already uses.
+#
+# THESE ARE JUDGEMENTS AND NOT LEGAL ADVICE. What is checkable is that the
+# question was asked and the answer was written down. docs/licence.md is where
+# the same position is stated in prose for an operator, and the residual is
+# stated there rather than hidden here: a declaration in a package's own
+# metadata is what this list is compared against, and nobody in this tree has
+# read the licence text of any dependency.
+#
+# THE LIST HOLDS WHAT THE TREE ACTUALLY CARRIES. A licence added before a
+# package needs it is a decision made without a case in front of it, and it sits
+# here afterwards looking like one somebody made deliberately.
+
+# The project's own licence, which every workspace member declares and which the
+# two manifests have to agree on before licence-scan will judge anything.
+AGPL-3.0-only
+
+# Permissive, with no condition beyond attribution and the notice, so the
+# combined work carries this project's licence and the notice travels with it.
+MIT
+
+# Permissive, and its patent and notice terms are additional permissions and
+# requirements that version 3 of this project's licence is written to carry.
+# Version 2 is not, which is why the version this project uses is not incidental.
+Apache-2.0
+
+# A dedication to the public domain with a permissive fallback, so it imposes
+# nothing on the combined work. Reached here as one half of an OR with MIT.
+Unlicense
+
+# Permissive, covering the Unicode character data one dependency compiles in.
+# It reaches this tree as the AND half of "(MIT OR Apache-2.0) AND Unicode-3.0",
+# which is what makes it a separate decision rather than one the OR absorbs.
+Unicode-3.0

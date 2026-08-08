@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Refused by clippy::allow_attributes_without_reason, which server/Cargo.toml
 // denies.
 //

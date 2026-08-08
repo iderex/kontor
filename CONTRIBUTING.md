@@ -75,6 +75,35 @@ surviving; the register of which files those are is the comment at the top of
 third is the evidence that all three refusals work, against fixtures it builds
 rather than against this tree.
 
+The licence is in the tree rather than only at its root, and four more commands
+are about keeping it there:
+
+    ./licence-scan headers
+    ./licence-scan dependencies
+    ./licence-apply
+    ./prove-licences
+
+The first refuses a tracked source file that does not carry this project's SPDX
+identifier on its first line, or under its shebang where it has one. The
+identifier is read out of `server/Cargo.toml` and `client/package.json` rather
+than written into the check, and a disagreement between those two is refused
+before any file is judged, because a check comparing against one of two answers
+passes a tree that has already lost the argument. The second reads what every
+package in both toolchains declares about itself and refuses one whose licence
+is not covered by `licences-allowed`, a file carrying a reason for every entry
+and refusing an entry that carries none.
+
+`./licence-apply` is the tool that writes a missing header, so the header has
+one spelling rather than one per contributor, and it is idempotent. It never
+rewrites a header naming a different licence: that is somebody's statement
+rather than a typo, and `licence-scan` names those files for a person to decide
+about. `./prove-licences` is the evidence that all of it refuses what it names,
+against fixture repositories it builds rather than against this tree.
+
+What the dependency rule cannot do is read a licence text or judge whether a
+declaration is true, and `docs/licence.md` says so in the same place it states
+what the licence asks of an operator.
+
 Adding a binary file means declaring it in `.gitattributes` with git's `binary`
 macro. Nothing is exempt from the encoding rule by detection, which is
 deliberate: a detector reading a mangled file as binary would exempt exactly the
@@ -246,9 +275,15 @@ The tree it builds:
     coverage
     docs
     format
+    licence-apply
+    licence-scan
+    licences-allowed
     lint
+    pr-body-scan
     prove-determinism
     prove-headless
+    prove-licences
+    prove-pr-body
     prove-quality
     prove-sealed
     regenerate

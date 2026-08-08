@@ -11,3 +11,5 @@ See [NOTICE.md](NOTICE.md) for the intended-use notice.
 See [docs/acceptable-use.md](docs/acceptable-use.md) for the uses this project does not support, and for what the software does not do to prevent them.
 
 See [LICENSE](LICENSE) for the terms, the GNU Affero General Public License version 3.
+
+See [docs/licence.md](docs/licence.md) for what that licence asks of an operator running this, of anybody offering it to other people, and of a contributor.

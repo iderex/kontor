@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The properties of docs/decisions/0005-money-and-time.md, checked over every
 //! value of a bounded domain rather than over a sample of one.
 //!

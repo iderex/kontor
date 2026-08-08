@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // The application has no behaviour.
 //
 // #62 decides the client means and how it talks to the server, and nothing here

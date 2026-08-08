@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # The marking, shown to bite.
 #
 # A gate that has never refused anything is a claim, not a control. Every leg

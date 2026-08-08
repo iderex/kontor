@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The API layer. Parses, authenticates, authorises and calls down.
 //!
 //! It holds no business rule of its own, and nothing depends on it. A rule that

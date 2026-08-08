@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Objects, fields, types and validation, held as run time data.
 //!
 //! Two halves so far. [`field_type`] is the closed set of types an operator may

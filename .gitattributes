@@ -68,6 +68,14 @@
 /prove-headless           text eol=lf
 /prove-sealed             text eol=lf
 /coverage                 text eol=lf
+/licence-scan             text eol=lf
+/licence-apply            text eol=lf
+/prove-licences           text eol=lf
+
+# Not a script, and declared for the same reason all the same. Every line in it
+# is one entry or one entry's reason, read line by line by a program, and a
+# carriage return would arrive as part of the licence identifier on the line.
+/licences-allowed         text eol=lf
 
 # When the first image or font arrives, declare it with git's own `binary`
 # macro rather than with `-text` alone. The macro unsets `text`, which the
