@@ -1,0 +1,444 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Three refusals over the tracked documentation, each of them a question about
+# whether a reader can follow what a document says.
+#
+#     docs-scan
+#     docs-scan links
+#     docs-scan documents
+#     docs-scan records
+#     docs-scan /path/to/a/checkout
+#     docs-scan records /path/to/a/checkout
+#
+# The documentation here carries load. A decision record is what later work is
+# argued against, docs/layout.md is where a boundary is reasoned about, and
+# docs/licence.md is what an operator reads before deploying. A document that
+# points at a file which is not there costs a reader the time to find that out,
+# and the cost falls on the reader who trusted it most.
+#
+# WHAT EACH RULE READS.
+#
+# links judges the target of a markdown link in a tracked document. An author
+# who wrote a link asked a reader to follow it, so it has to lead to a tracked
+# file. A target naming a scheme is left alone, because resolving one reaches
+# the network and every rule here answers from the checkout.
+#
+# documents judges a token ending in .md that carries a directory, written in
+# the prose of a tracked document. That is narrower than every path a document
+# mentions and the narrowing is deliberate: the tokens in these documents that
+# carry a slash and are not paths in this tree include a repository name, a
+# check name with spaces in it, an absolute path on the machine, and an argument
+# to a command that reaches a service. A rule that guessed at which of those was
+# meant to resolve would refuse the sentence explaining it. A document is the
+# case worth holding, because a document is followed rather than executed.
+#
+# records judges the naming and the header block of a decision record against
+# the record that states the rule for both, docs/decisions/0001-means.md. The
+# field names and the first section heading are read out of that file rather
+# than written here, so a header block changed there is required from that
+# commit and this file cannot drift against it. That record is judged against
+# itself, which it passes by construction, and it is the one file here whose
+# header block nothing checks.
+#
+# WHAT THE RULES DELIBERATELY DO NOT REACH, since a green run says nothing about
+# any of it.
+#
+# A line inside an indented block or a fence is passed over by documents. Those
+# are commands, and a wrong path in one fails for the reader who runs it rather
+# than misleading the reader who does not. workflow-scan states the same bound
+# over run: lines for the same reason.
+#
+# A fragment on a link target is not judged. The spelling of an anchor is the
+# renderer and not this tree, and a rule guessing at it would refuse a link that
+# works. Nothing tracked here writes one.
+#
+# A token carrying a placeholder is not a reference. Two shapes appear: angle
+# brackets around a name that varies, and a segment written in upper case where
+# the naming rule asks for lower. Both stand for a name rather than being one.
+#
+# A token followed by "under #<n>" is a forward reference rather than a dead
+# one. A number under docs/decisions/ is allocated by the issue that asks for
+# the record and written into that issue before the file exists, so a document
+# pointing at a record that is owed is the numbering rule working. What is
+# checkable from the checkout is that the reference declares the issue that owes
+# it; whether that issue is open is not, because it reaches the tracker.
+#
+# What a record must SAY is not judged. The rule these records are written to
+# asks for the alternative and the condition that would reverse the decision as
+# well as for the header block, and three of the records in this tree carry
+# neither under any heading a pattern could find. Requiring them would refuse
+# the tree for what it already is, so the header block is what this reads and
+# #115 carries the rest.
+#
+# Whether what a document says is TRUE is not judged by any of this, and no
+# reading of the tree decides it. That a heading is present is a fact about the
+# bytes; that the record under it still describes what the tree does is not. A
+# reviewer is the whole mechanism for that half.
+#
+# POSIX sh with the reading in awk, matching text-scan and workflow-scan, and
+# for the same reason: every rule here is a question about lines of text plus
+# one call to git, and a check that decides whether a document can be followed
+# should not wait on a compiler.
+set -eu
+
+rule=all
+case "${1-}" in
+    links | documents | records)
+        rule=$1
+        shift
+        ;;
+esac
+
+cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
+
+# The record that states the naming rule and carries the header block every
+# other record is required to carry. Named once, and the run fails closed where
+# it is absent rather than requiring nothing of anybody.
+exemplar=docs/decisions/0001-means.md
+
+tracked=$(mktemp)
+documents_list=$(mktemp)
+records_list=$(mktemp)
+trap 'rm -f "$tracked" "$documents_list" "$records_list"' EXIT
+
+git ls-files > "$tracked"
+git ls-files '*.md' > "$documents_list"
+git ls-files 'docs/decisions/*' > "$records_list"
+
+status=0
+
+links() {
+    if [ ! -s "$documents_list" ]; then
+        echo "docs-scan: no tracked document, so the link rule judged nothing."
+        return 0
+    fi
+
+    tr '\n' '\0' < "$documents_list" | xargs -0 awk -v tracked="$tracked" '
+    function resolve(dir, target,   full, n, parts, i, kept, depth, out) {
+        if (substr(target, 1, 1) == "/") {
+            return ""
+        }
+        full = (dir == "." ? target : dir "/" target)
+        n = split(full, parts, "/")
+        depth = 0
+        for (i = 1; i <= n; i++) {
+            if (parts[i] == "" || parts[i] == ".") {
+                continue
+            }
+            if (parts[i] == "..") {
+                if (depth > 0) {
+                    depth--
+                }
+                continue
+            }
+            kept[++depth] = parts[i]
+        }
+        out = ""
+        for (i = 1; i <= depth; i++) {
+            out = (out == "" ? kept[i] : out "/" kept[i])
+        }
+        return out
+    }
+
+    BEGIN {
+        while ((getline path < tracked) > 0) {
+            have[path] = 1
+        }
+        close(tracked)
+    }
+
+    FNR == 1 {
+        dir = FILENAME
+        if (sub(/\/[^\/]*$/, "", dir) == 0) {
+            dir = "."
+        }
+    }
+
+    {
+        rest = $0
+        while (match(rest, /\]\([^)(]*\)/)) {
+            target = substr(rest, RSTART + 2, RLENGTH - 3)
+            rest = substr(rest, RSTART + RLENGTH)
+
+            sub(/#.*$/, "", target)
+            if (target == "") {
+                continue
+            }
+            if (target ~ /^[A-Za-z][A-Za-z0-9+.-]*:/) {
+                continue
+            }
+
+            judged++
+            path = resolve(dir, target)
+            if (path != "" && path in have) {
+                continue
+            }
+
+            printf "docs-scan: %s:%d links to %s, which resolves to no tracked file. A link an author wrote is a promise that it leads somewhere, and this one leads nowhere.\n", FILENAME, FNR, target > "/dev/stderr"
+            refused++
+        }
+    }
+
+    END {
+        if (refused > 0) {
+            printf "docs-scan: %d link(s) in the documentation resolve to nothing.\n", refused > "/dev/stderr"
+            exit 1
+        }
+        if (judged == 0) {
+            print "docs-scan: no tracked document holds a link this rule reads, so the link rule judged nothing."
+            exit 0
+        }
+        printf "docs-scan: %d link(s) in the documentation, every one of them resolving to a tracked file. A fragment on a target is not judged.\n", judged
+    }
+    ' || return 1
+}
+
+documents() {
+    if [ ! -s "$documents_list" ]; then
+        echo "docs-scan: no tracked document, so the document reference rule judged nothing."
+        return 0
+    fi
+
+    tr '\n' '\0' < "$documents_list" | xargs -0 awk -v tracked="$tracked" '
+    BEGIN {
+        while ((getline path < tracked) > 0) {
+            have[path] = 1
+        }
+        close(tracked)
+        reference = "[.A-Za-z0-9_][A-Za-z0-9_./<>-]*\\.md"
+    }
+
+    FNR == 1 {
+        fenced = 0
+    }
+
+    /^ *```/ {
+        fenced = !fenced
+        next
+    }
+
+    {
+        if (fenced) {
+            next
+        }
+        # An indented block is a command. A path in one is executed by the
+        # reader who runs it, which fails for them rather than misleading them.
+        if ($0 ~ /^(    |\t)/) {
+            next
+        }
+
+        # A link target belongs to the link rule. Blanking it here keeps one
+        # defect from earning two refusals under two names.
+        line = $0
+        gsub(/\]\([^)(]*\)/, "]()", line)
+
+        rest = line
+        while (match(rest, reference)) {
+            name = substr(rest, RSTART, RLENGTH)
+            rest = substr(rest, RSTART + RLENGTH)
+
+            if (name !~ /\//) {
+                continue
+            }
+            if (name ~ /[<>]/ || name ~ /[A-Z]/) {
+                patterns++
+                continue
+            }
+            if (name in have) {
+                judged++
+                continue
+            }
+            # Asked after resolution rather than before it, so a declaration
+            # left on a document that has since landed does not stop the rule
+            # noticing the day that document moves.
+            if (match(rest, /^[^A-Za-z]*under #[0-9]+/)) {
+                forward++
+                continue
+            }
+
+            printf "docs-scan: %s:%d names %s, which is not a tracked document here. Where the document is one an issue owes, write \"under #<n>\" after it and it reads as a reference forward rather than a dead one.\n", FILENAME, FNR, name > "/dev/stderr"
+            refused++
+        }
+    }
+
+    END {
+        if (refused > 0) {
+            printf "docs-scan: %d document reference(s) in the documentation resolve to nothing.\n", refused > "/dev/stderr"
+            exit 1
+        }
+        if (judged == 0 && forward == 0 && patterns == 0) {
+            print "docs-scan: no tracked document names another document by a path, so the document reference rule judged nothing."
+            exit 0
+        }
+        printf "docs-scan: %d document reference(s) resolving to a tracked file, %d declared as owed by an issue, %d passed over as a placeholder rather than a name.\n", judged, forward, patterns
+    }
+    ' || return 1
+}
+
+records() {
+    if [ ! -s "$records_list" ]; then
+        echo "docs-scan: no decision record in this tree, so the record rule judged nothing."
+        return 0
+    fi
+
+    if ! grep -qxF "$exemplar" "$records_list"; then
+        echo "docs-scan: $exemplar is not tracked here, and it is what says which header block a record carries. Failing closed rather than requiring nothing of any record." >&2
+        return 1
+    fi
+
+    seen=$(mktemp)
+    bad=0
+    judged=0
+
+    while IFS= read -r record; do
+        [ -n "$record" ] || continue
+        judged=$((judged + 1))
+        base=${record##*/}
+
+        # The number is allocated once by the issue that asks for the record and
+        # is never reused, so two files under one number leave every document
+        # pointing at that number unable to say which it meant.
+        number=$(printf '%s\n' "$base" | sed -n 's/^\([0-9][0-9][0-9][0-9]\)-.*$/\1/p')
+        if [ -n "$number" ]; then
+            if earlier=$(grep "^$number " "$seen" 2>/dev/null); then
+                echo "docs-scan: $record and ${earlier#* } are both written under number $number. A number is allocated once and never reused, so a document pointing at that number cannot say which record it meant." >&2
+                bad=1
+            else
+                echo "$number $record" >> "$seen"
+            fi
+        fi
+
+        if ! awk -v exemplar="$exemplar" -v record="$record" -v number="$number" '
+        # The field names and the first section heading come out of the
+        # exemplar, which is the record saying every other one carries the block
+        # it carries. Nothing in this file is a copy of them.
+        BEGIN {
+            wanted = 0
+            seen_title = 0
+            while ((getline line < exemplar) > 0) {
+                if (line ~ /^# /) {
+                    seen_title = 1
+                    continue
+                }
+                if (!seen_title) {
+                    continue
+                }
+                if (line ~ /^## /) {
+                    heading = line
+                    break
+                }
+                if (line ~ /^[A-Za-z][A-Za-z ]*:/) {
+                    field = line
+                    sub(/:.*$/, "", field)
+                    fields[++wanted] = field
+                }
+            }
+            close(exemplar)
+
+            if (wanted == 0 || heading == "") {
+                printf "docs-scan: %s carries no header block or no section under it, so there is nothing a record could be required to carry. Failing closed rather than requiring nothing.\n", exemplar > "/dev/stderr"
+                exit 2
+            }
+
+            field_at = 0
+            in_block = 1
+        }
+
+        FNR == 1 {
+            base = record
+            sub(/^.*\//, "", base)
+            if (number == "" || base !~ /^[0-9][0-9][0-9][0-9]-[a-z0-9]+(-[a-z0-9]+)*\.md$/) {
+                printf "docs-scan: %s is not named the way a decision record is named. It is NNNN-slug.md, four digits with leading zeros and then lower case words joined by hyphens, and %s is where that is stated.\n", record, exemplar > "/dev/stderr"
+                stopped = 1
+                exit 1
+            }
+            if ($0 !~ ("^# " number "\\. .")) {
+                printf "docs-scan: %s opens with \"%s\" rather than with \"# %s. \" and then what the record is about, so the number a reader cites and the number the file is filed under can disagree.\n", record, $0, number > "/dev/stderr"
+                stopped = 1
+                exit 1
+            }
+            next
+        }
+
+        in_block && /^## / {
+            while (field_at < wanted) {
+                field_at++
+                printf "docs-scan: %s carries no %s line. %s is the record stating which header block every record carries, and it is where the field names this reads come from.\n", record, fields[field_at], exemplar > "/dev/stderr"
+                refused++
+            }
+            if ($0 != heading) {
+                printf "docs-scan: %s opens with \"%s\" where the header block is followed by \"%s\" in %s, which is what every record carries first.\n", record, $0, heading, exemplar > "/dev/stderr"
+                refused++
+            }
+            in_block = 0
+            next
+        }
+
+        in_block && /^[A-Za-z][A-Za-z ]*:/ {
+            name = $0
+            sub(/:.*$/, "", name)
+            value = $0
+            sub(/^[A-Za-z][A-Za-z ]*: */, "", value)
+
+            field_at++
+            if (field_at > wanted) {
+                printf "docs-scan: %s carries a %s line the header block in %s does not have. A field one record carries and the others do not is a field nothing reads.\n", record, name, exemplar > "/dev/stderr"
+                refused++
+                next
+            }
+            if (name != fields[field_at]) {
+                printf "docs-scan: %s carries %s where the header block in %s carries %s. Either that field is missing here or the order moved, and the order is the one the exemplar sets so that a reader finds the same fact in the same place in every record.\n", record, name, exemplar, fields[field_at] > "/dev/stderr"
+                refused++
+                next
+            }
+            if (value == "") {
+                printf "docs-scan: %s carries a %s line with nothing after it. A field with no value states nothing and reads as though it had.\n", record, name > "/dev/stderr"
+                refused++
+                next
+            }
+            if (name == "Issue" && value !~ /#[0-9]+/) {
+                printf "docs-scan: %s says \"Issue: %s\", which names no issue number. The number is how a record is traced back to the argument that produced it.\n", record, value > "/dev/stderr"
+                refused++
+            }
+        }
+
+        END {
+            if (stopped) {
+                exit 1
+            }
+            if (in_block) {
+                printf "docs-scan: %s never reaches a section heading, so it carries a header block and no decision under it.\n", record > "/dev/stderr"
+                refused++
+            }
+            if (refused > 0) {
+                exit 1
+            }
+        }
+        ' "$record"; then
+            bad=1
+        fi
+    done < "$records_list"
+
+    rm -f "$seen"
+
+    if [ "$bad" -ne 0 ]; then
+        echo "docs-scan: a file under docs/decisions/ was refused, named above, out of $judged judged." >&2
+        return 1
+    fi
+
+    echo "docs-scan: $judged decision record(s), every one named and headed the way $exemplar says. Whether what a record decides is still what the tree does is not decided here."
+    return 0
+}
+
+case "$rule" in
+    links)     links     || status=1 ;;
+    documents) documents || status=1 ;;
+    records)   records   || status=1 ;;
+    all)
+        links     || status=1
+        documents || status=1
+        records   || status=1
+        ;;
+esac
+
+exit "$status"
