@@ -1,0 +1,66 @@
+# One refusal over the action references in this directory, and the evidence
+# that it bites. A step written as `uses: some/action@v4` runs whatever that
+# name resolves to when the job starts, inside this repository's job and with
+# the checkout it has already made, so the owner of that name can change what
+# every gate here runs without touching this tree. A commit hash names bytes
+# instead of a name somebody else holds.
+#
+# The zizmor job in zizmor.yml already covers this among what it catches, and
+# that is a claim about a tool the runner installs rather than a rule this tree
+# carries. This gate is the rule in the tree: it runs before a network is
+# reached, a contributor can ask it before pushing, and it has a fixture of its
+# own. #114 is where the rest of the supply chain sits and what it does not
+# cover yet.
+#
+# Each job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: action-pins
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every other gate here has: a commit in a pull request is judged once under
+  # each name, and the default branch is judged again when the merge lands.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Both jobs read the checkout, and the second builds its fixtures
+# under the runner's own temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Reject an action reference that is not a commit hash
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+      - name: Reject an action reference that is not a commit hash
+        run: ./action-pin-scan
+
+  proof:
+    name: Prove the action pin rule bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a repository holding one workflow file, runs
+        # the shipped scanner against it and reads the exit code, and every red
+        # leg is followed by the one-change neighbour that has to pass.
+        run: ./prove-action-pins

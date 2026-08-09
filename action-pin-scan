@@ -1,0 +1,118 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# One refusal over the action references in the workflow files: a step naming an
+# action by anything other than a full commit hash.
+#
+#     action-pin-scan
+#     action-pin-scan /path/to/a/checkout
+#
+# A tag and a branch are names their owner can repoint at any time, and a step
+# written as `uses: some/action@v4` runs whatever that name resolves to on the
+# day the job starts. The action then runs inside this repository's job, with
+# the job's token and the checkout it has already made, so repointing the name
+# is a route into every run of every gate here. A commit hash names bytes, and
+# repointing a name does not move it.
+#
+# WHAT IT READS AND WHAT IT DOES NOT. Only the part of a line before its first
+# `#`, so a `uses:` written inside a comment as an example is not judged, which
+# is the mirror of what workflow-scan reads and is the same argument: a line
+# that is executed fails the run, and a line that is only read misleads a
+# reader. Only a line whose key is `uses:` is taken as a reference, so a `run:`
+# line mentioning the word is passed over.
+#
+# A reference beginning with `./` names an action inside this checkout. It
+# carries no reference that anybody outside could move, so it is accepted, and
+# the tree holds none today.
+#
+# WHAT IT CANNOT DO. It cannot say whether a hash is the commit the version
+# comment beside it claims: resolving that reaches the network, and every rule
+# here answers from the checkout alone. It does not require the comment either,
+# which is a rule about how a pin is written rather than about whether it is
+# one. And a hash is immutable rather than trustworthy - it says the bytes will
+# not change under the job, not that the bytes were ever good.
+#
+# The refusal names the file, the line and the reference, because all three are
+# public in a tracked file and a reader cannot find the step from a count.
+#
+# POSIX sh with the reading in awk, matching workflow-scan and the other scans,
+# and for the same reason: the rule is a question about lines of text, and a
+# check over the workflow files should not wait on either toolchain being built.
+#
+# prove-action-pins is what shows this file bites, and it runs this file rather
+# than a copy of its rules.
+set -eu
+
+cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
+
+files=$(git ls-files .github/workflows/)
+
+# Nothing to judge is a fact worth printing rather than a silent pass. A tree
+# with no workflow files has no action to pin; a run that read none because the
+# path moved looks identical from the exit code alone.
+if [ -z "$files" ]; then
+    echo "action-pin-scan: no workflow file is tracked here, so nothing was judged."
+    exit 0
+fi
+
+# xargs reports a failing child under an exit code of its own, and a caller
+# reading this script's verdict should see the one number every other scan here
+# returns, so the refusal is mapped back to 1 at the end.
+status=0
+
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 awk '
+{
+    line = $0
+    hash = index(line, "#")
+    if (hash > 0) {
+        line = substr(line, 1, hash - 1)
+    }
+
+    if (match(line, /^[ \t]*(-[ \t]+)?uses:[ \t]*/) == 0) {
+        next
+    }
+
+    value = substr(line, RSTART + RLENGTH)
+    sub(/[ \t]+$/, "", value)
+    sub(/^["'"'"']/, "", value)
+    sub(/["'"'"']$/, "", value)
+
+    judged++
+
+    if (value ~ /^\.\.?\//) {
+        next
+    }
+
+    at = index(value, "@")
+
+    if (value == "") {
+        printf "action-pin-scan: %s:%d has a uses: key naming nothing. A step that names no action is not a step anybody can read.\n", FILENAME, FNR > "/dev/stderr"
+        refused++
+        next
+    }
+
+    if (at == 0) {
+        printf "action-pin-scan: %s:%d uses %s, which carries no reference at all and resolves to whatever the default branch of that repository holds on the day the job runs.\n", FILENAME, FNR, value > "/dev/stderr"
+        refused++
+        next
+    }
+
+    ref = substr(value, at + 1)
+
+    if (length(ref) == 40 && ref ~ /^[0-9a-f]+$/) {
+        next
+    }
+
+    printf "action-pin-scan: %s:%d uses %s, whose reference is a name rather than a commit hash. Its owner can repoint it, and the step would then run bytes nobody here chose.\n", FILENAME, FNR, value > "/dev/stderr"
+    refused++
+}
+
+END {
+    if (refused > 0) {
+        printf "action-pin-scan: %d action reference(s) are not pinned to a commit.\n", refused > "/dev/stderr"
+        exit 1
+    }
+    printf "action-pin-scan: %d action reference(s) in the workflow files, every one of them pinned to a commit.\n", judged
+}
+' || status=1
+
+exit "$status"

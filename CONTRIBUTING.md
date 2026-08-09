@@ -420,6 +420,31 @@ the run rather than misleading a reader, and an issue number, which would have
 to be resolved against the tracker rather than against the checkout. #156 is
 where both bounds are recorded.
 
+The same directory is read a second time, for what its steps run rather than for
+what its comments claim:
+
+    ./action-pin-scan
+    ./prove-action-pins
+
+The first refuses a step naming an action by anything other than a full commit
+hash. A tag and a branch are names their owner can repoint at any time, and the
+action runs inside this repository's job, with the token that job holds and the
+checkout it has already made, so repointing one is a route into every gate here.
+A reference beginning with `./` names an action inside this checkout and carries
+nothing anybody outside can move, so it is accepted, and the tree holds none
+today. The second is the evidence, against repositories it builds rather than
+against this tree, and every leg expecting a refusal is followed by its
+one-change neighbour.
+
+Three things it does not reach, said plainly because a green run says nothing
+about any of them. Whether a hash is the commit the version comment beside it
+claims is not judged, since resolving that reaches the network. Whether the
+comment is there at all is not judged either, which is a rule about how a pin is
+written rather than about whether it is one. And a hash is immutable rather than
+trustworthy: it says the bytes will not change under the job, not that the bytes
+were ever good, which is what the dependency review gate is for and what #114
+carries the rest of.
+
 The documentation is read by four rules of its own, two about what a document
 points at, one about how a decision record is shaped and one about the words a
 document is written in:
@@ -524,6 +549,7 @@ The tree it builds:
     NOTICE.md
     README.md
     SECURITY.md
+    action-pin-scan
     build
     client
     connector-guide-scan
@@ -537,6 +563,7 @@ The tree it builds:
     licences-allowed
     lint
     pr-body-scan
+    prove-action-pins
     prove-connector-guides
     prove-determinism
     prove-docs-scan
