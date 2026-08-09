@@ -1,0 +1,152 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The action pinning rule, shown to bite.
+#
+#     prove-action-pins
+#
+# Each leg builds a throwaway repository holding one workflow file, runs the
+# shipped scanner against it and reads the exit code. No leg restates the rule,
+# so a rule loosened where it lives reddens the leg that depended on it rather
+# than passing quietly.
+#
+# Every red leg is followed by its one-change neighbour, which has to pass.
+# Without that pair a leg is also satisfied by a scanner that refuses every step
+# it is given. The near misses here are the two edits somebody will actually
+# make: the short hash that a repository page offers first, and a token of the
+# right length that is not one.
+#
+# A red leg also reads what the refusal said rather than only that it refused,
+# because a scanner that fell over on the fixture exits non-zero as well and
+# would satisfy a leg reading the number alone.
+#
+# The fixtures are repositories rather than loose files because the scanner
+# reads what is TRACKED, which is what a job checks out, rather than what
+# happens to be on the disk beside it.
+#
+# POSIX sh, matching the script it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+# A real pin out of this tree, so that the accepted legs are accepting the shape
+# the workflow files already carry rather than a shape invented for the fixture.
+pinned=3d3c42e5aac5ba805825da76410c181273ba90b1
+
+# A repository holding one workflow file whose single step is the line the case
+# is about. The scanner is run from outside it and given it as the root, which
+# is the argument workflow-scan and text-scan take for the same reason.
+uses_case() {
+    what=$1
+    expectation=$2
+    step=$3
+    reason=${4-}
+
+    tmp=$(mktemp -d)
+    git -c init.defaultBranch=main init -q "$tmp"
+    # This machine's git may be set to rewrite line endings on the way in. The
+    # rule reads lines rather than bytes, so it would survive that, but the
+    # warning it prints on every fixture would bury the legs.
+    git -C "$tmp" config core.autocrlf false
+    mkdir -p "$tmp/.github/workflows"
+
+    cat > "$tmp/.github/workflows/subject.yml" <<CONTENT
+name: subject
+
+on:
+  pull_request:
+
+jobs:
+  one:
+    name: One
+    runs-on: ubuntu-latest
+    steps:
+$step
+CONTENT
+
+    git -C "$tmp" add -A
+
+    if out=$(sh "$root/action-pin-scan" "$tmp" 2>&1); then
+        if [ "$expectation" = green ]; then
+            pass "$what"
+        else
+            fail "$what (it passed, and it was supposed to be refused)"
+        fi
+    else
+        if [ "$expectation" = red ]; then
+            case $out in
+                *"$reason"*) pass "$what" ;;
+                *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$reason')" ;;
+            esac
+        else
+            fail "$what (it was refused, and it was supposed to pass)"
+        fi
+    fi
+
+    rm -rf "$tmp"
+}
+
+echo "prove-action-pins: a reference a name can move"
+
+uses_case "a step pinned to a tag is refused" \
+    red "      - uses: actions/checkout@v7" \
+    "a name rather than a commit hash"
+
+uses_case "the same step pinned to a commit hash is accepted" \
+    green "      - uses: actions/checkout@$pinned"
+
+uses_case "a step pinned to a branch is refused" \
+    red "      - uses: actions/checkout@main" \
+    "a name rather than a commit hash"
+
+uses_case "a step carrying no reference at all is refused" \
+    red "      - uses: actions/checkout" \
+    "carries no reference at all"
+
+echo "prove-action-pins: the near misses"
+
+uses_case "the short hash a repository page offers first is refused" \
+    red "      - uses: actions/checkout@3d3c42e" \
+    "a name rather than a commit hash"
+
+uses_case "a token of the right length that is not a hash is refused" \
+    red "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90bg" \
+    "a name rather than a commit hash"
+
+uses_case "a hash carrying the version comment this tree writes is accepted" \
+    green "      - uses: actions/checkout@$pinned # v7.0.1"
+
+uses_case "a quoted hash is accepted" \
+    green "      - uses: \"actions/checkout@$pinned\""
+
+uses_case "a subdirectory action pinned to a hash is accepted" \
+    green "      - uses: github/codeql-action/upload-sarif@$pinned"
+
+echo "prove-action-pins: what the rule deliberately does not reach"
+
+# The bounds the scanner's own header states, kept as legs so that widening the
+# rule later reddens something rather than quietly changing what a green run
+# means.
+uses_case "a uses: written inside a comment is passed over" \
+    green "      # - uses: actions/checkout@v7 is what this would look like
+      - run: true"
+
+uses_case "the word on a run: line is passed over" \
+    green "      - run: echo \"what it uses: actions/checkout@v7\""
+
+uses_case "an action inside this checkout is accepted" \
+    green "      - uses: ./.github/actions/subject"
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-action-pins: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-action-pins: every leg did what it says."
