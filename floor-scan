@@ -1,0 +1,184 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# One rule in two directions over the version floors this project states: the
+# record is the only place a floor is decided, and every version pinned in the
+# tree follows it.
+#
+#     floor-scan
+#     floor-scan /path/to/a/checkout
+#
+# docs/decisions/0001-means.md states a floor for PostgreSQL and a floor for
+# Node, and it closes that passage by saying that raising one is a change to the
+# record rather than one made quietly in a workflow file. Nothing refused a
+# departure from that sentence, so the floors were prose and the pins were the
+# real answer. A pin is not a floor: it says what this repository builds and
+# tests against today, and the floor says what an operator is told they may run.
+# When the two disagree the operator on the floor version is the check, which is
+# the failure #131 is open against.
+#
+# THE RECORD IS READ RATHER THAN COPIED. No version number is written into this
+# file. Both floors are read out of the record at every run, so raising one
+# there reddens this until each pin follows, and lowering one here is not
+# possible without editing the record that argues it.
+#
+# IT FAILS CLOSED IN BOTH DIRECTIONS. A floor the record does not state is
+# refused, because a check with no authority to read must not pass as one that
+# read an authority and found nothing. A floor the record states and no tracked
+# file answers is refused too, since a floor nothing is pinned to is a floor
+# nothing follows, and that is the direction a register loses first.
+#
+# WHAT IT DOES NOT READ, said plainly because a green run says nothing about
+# any of it.
+#
+# The Rust floor. The record states one, and server/Cargo.toml carries a
+# `rust-version` and rust-toolchain.toml a channel, so it sits in exactly the
+# position the other two were in. #131 names PostgreSQL and Node and not Rust,
+# and whether the third belongs there is open on that issue rather than settled
+# by this file.
+#
+# What the record states for Node is a line and not a minimum. "The floor is the
+# 24 line" names a major, so what is judged is the major, and a pin of the first
+# release on that line and a pin of the newest one are both on it and
+# indistinguishable here. Which of them is the minimum belongs to whoever owns
+# the record.
+#
+# Whether either floor is the right one. That the pins agree with the record is
+# a fact about the bytes; that the record chose well is a judgement, and no
+# reading of the tree makes it.
+#
+# And it says nothing about running anything against a floor version. The suite
+# that would do that is the rest of #131 and is not this.
+#
+# ONE BOUND ON THE NODE PIN SHAPE. In a package.json the key is read by its
+# name, so a dependency literally named `node` and pinned to another major would
+# be read as a pin and refused. There is none, and the refusal names the file
+# and the line rather than deciding anything, so a person is the mechanism for
+# that case.
+#
+# prove-floors is the evidence that this refuses what it names, against
+# repositories it builds rather than against this tree.
+#
+# POSIX sh with the reading in git grep and awk, matching text-scan,
+# workflow-scan and secret-scan, and for the same reason: every rule here is a
+# question about lines of text plus one call to git, and a check that decides
+# whether two numbers agree should not wait on a compiler.
+set -eu
+
+cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
+
+# The record that decides both floors. Named once, and the run fails closed
+# where it is absent rather than letting a tree with no record read as a tree
+# with no floors.
+record=docs/decisions/0001-means.md
+
+if ! git ls-files --error-unmatch "$record" >/dev/null 2>&1; then
+    echo "floor-scan: this tree does not track $record, so nothing states a floor for this to read. Failing closed rather than reading an absent record as a tree with no floors." >&2
+    exit 1
+fi
+
+refused=0
+floors=0
+pins=0
+
+# git grep: 0 = found, 1 = nothing found, 2 or above = the search itself failed.
+# The exit code is captured so `set -e` does not abort on the clean exit 1, and
+# anything above 1 fails closed rather than reading as a tree with nothing in
+# it. The search runs here rather than in a function of its own so that a broken
+# search stops the run, which an exit inside a command substitution would not.
+#
+# One floor: the shape the record states it in, the shape a pin is written in,
+# where pins of that shape live, and what to do when the two disagree. The
+# advice is passed in beside the shapes rather than held in the message printer,
+# so a floor cannot be added without somebody writing the sentence the person
+# who trips it reads.
+#
+# Both shapes capture the major and nothing else, because a major is what both
+# floors are stated in. \K drops everything before it from the match, so what
+# git grep prints is the number rather than the sentence around it.
+floor() {
+    name=$1
+    stated=$2
+    written=$3
+    where=$4
+    advice=$5
+
+    rc=0
+    said=$(git grep -I -h -o -P -e "$stated" -- "$record") || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        echo "floor-scan: git grep exited $rc reading the $name floor out of $record. Failing closed rather than reading a broken search as a record that states nothing." >&2
+        exit 1
+    fi
+
+    said=$(printf '%s' "$said" | sort -u)
+    count=$(printf '%s' "$said" | grep -c '^' || true)
+    [ -n "$said" ] || count=0
+
+    if [ "$count" -eq 0 ]; then
+        echo "floor-scan: $record states no $name floor in the words this reads. The record is the authority for a floor, so one it does not state is one nothing can be held to. Failing closed rather than judging no pins." >&2
+        refused=$((refused + 1))
+        return
+    fi
+
+    if [ "$count" -gt 1 ]; then
+        echo "floor-scan: $record states $count different $name floors. A floor with two answers is one nothing can follow, so this reads it as none rather than picking one." >&2
+        refused=$((refused + 1))
+        return
+    fi
+
+    floors=$((floors + 1))
+
+    rc=0
+    # Unquoted on purpose: the pathspec is one field holding one or more of
+    # them, and git is what resolves the glob rather than the shell.
+    # shellcheck disable=SC2086
+    found=$(git grep -I -n -o -P -e "$written" -- $where) || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        echo "floor-scan: git grep exited $rc looking for a $name pin. Failing closed rather than reading a broken search as a tree with no pin." >&2
+        exit 1
+    fi
+
+    if [ -z "$found" ]; then
+        echo "floor-scan: $record states a $name floor of $said and no tracked file answers it. A floor nothing is pinned to is a floor nothing follows, so either something is pinned to it or the record no longer states it." >&2
+        refused=$((refused + 1))
+        return
+    fi
+
+    # The counting is in awk because the refusal and the tally are one walk over
+    # the same lines, and a second walk in the shell would be a second reading
+    # of what the first one already decided.
+    counted=$(printf '%s\n' "$found" | awk -F: -v name="$name" -v floor="$said" -v advice="$advice" -v record="$record" '
+    {
+        seen++
+        if ($3 == floor) {
+            next
+        }
+        printf "floor-scan: %s:%s pins %s %s, and %s states a floor of %s. %s\n", $1, $2, name, $3, record, floor, advice > "/dev/stderr"
+        bad++
+    }
+    END {
+        printf "%d %d\n", seen + 0, bad + 0
+    }
+    ')
+
+    pins=$((pins + ${counted% *}))
+    refused=$((refused + ${counted#* }))
+}
+
+floor 'PostgreSQL' \
+    'floor of major version \K[0-9]+' \
+    'postgres:\K[0-9]+' \
+    '.' \
+    'The record is where the floor is raised. Move it there and let this pin follow, or bring the pin back to the floor the record states.'
+
+floor 'Node' \
+    '[Tt]he floor is the \K[0-9]+(?= line)' \
+    '(?:^v?|"node":\s*")\K[0-9]+' \
+    '.nvmrc :(glob)**/package.json' \
+    'The record is where the line is chosen. Move it there and let this pin follow, or bring the pin back onto the line the record states.'
+
+if [ "$refused" -gt 0 ]; then
+    echo "floor-scan: $refused departure(s) from what $record states." >&2
+    exit 1
+fi
+
+echo "floor-scan: $floors floor(s) stated in $record, $pins pin(s) in the tree, every one of them on the floor its record states. The Rust floor is not read here, and what the record states for Node is a line rather than a minimum, so what is judged is the major."

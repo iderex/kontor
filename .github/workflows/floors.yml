@@ -1,0 +1,69 @@
+# One refusal about the version floors this project states, and the evidence
+# that it bites. docs/decisions/0001-means.md states a floor for PostgreSQL and
+# a floor for Node and says that raising one is a change to that record rather
+# than one made quietly in a workflow file. Nothing refused a departure from
+# that sentence, so a pin could move away from a floor and leave the operator on
+# the floor version as the first thing to find out.
+#
+# The job runs a script from the tree instead of holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+#
+# Neither job needs a toolchain. The rule is a question about lines of text plus
+# one call to git, so there is no setup step here and nothing to install.
+name: floors
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # text-determinism.yml settled on and the reason is written there: a commit
+  # that is both pushed and in a pull request is judged once under each name,
+  # and a name carried by two runs of two events cannot be required of a merge
+  # until docs/required-checks.md says how the platform resolves the duplicate.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. Both jobs read the checkout and one of them writes only into
+# throwaway repositories it builds under the runner's temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  floors:
+    name: Reject a version pin that has left the floor behind
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+
+      - name: Reject a version pin that has left the floor behind
+        # It reads both floors out of the record at every run and carries no
+        # number of its own, so raising a floor there reddens this until each
+        # pin follows it.
+        run: ./floor-scan
+
+  proof:
+    name: Prove the floor gate bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg builds a fixture repository, runs the shipped script
+        # against it and reads both the exit code and the reason, so a rule
+        # loosened where it lives reddens the leg that depended on it.
+        run: ./prove-floors
