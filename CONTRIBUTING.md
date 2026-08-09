@@ -383,13 +383,15 @@ the run rather than misleading a reader, and an issue number, which would have
 to be resolved against the tracker rather than against the checkout. #156 is
 where both bounds are recorded.
 
-The documentation is read by three rules of its own, two about what a document
-points at and one about how a decision record is shaped:
+The documentation is read by four rules of its own, two about what a document
+points at, one about how a decision record is shaped and one about the words a
+document is written in:
 
     ./docs-scan
     ./docs-scan links
     ./docs-scan documents
     ./docs-scan records
+    ./docs-scan terminology
     ./prove-docs-scan
 
 The first takes the target of every markdown link in a tracked document and
@@ -425,11 +427,36 @@ written into the check, so a field added there is required from that commit.
 That record is judged against itself and passes by construction, and it is the
 one file here whose header block nothing checks.
 
+The fourth reads the words a document is written in against `documentation-words`,
+which is the register saying which spelling this project uses and carrying a
+reason for every entry. An entry is the spelling that is refused, then `->`,
+then the spelling to write instead, and the line immediately above it is why.
+The check reads that file rather than holding a copy, so a word joins the rule
+by being written down there, and it refuses an entry that says nothing about
+itself, an entry whose answer it would itself refuse, and an entry answering
+with a word no tracked document uses. That last one is the register failing
+closed in the other direction: it holds the vocabulary the documentation already
+establishes rather than a list of words somebody would like.
+
+Three things are outside it. A word inside backticks, in an indented block or in
+a fence is somebody else's and is passed over, which is how a check name on
+another repository and a field in another project's metadata stay readable.
+General spelling is not judged at all: deciding whether an unknown word is
+misspelled needs a dictionary, which is a dependency this tree does not carry
+and could not reach from a suite that reaches nothing, so what is judged is the
+words the register names and nothing else. And one word this project does spell
+its own way is deliberately not in the register, with the reason written where a
+reader who goes to add it will meet it first.
+
 `./prove-docs-scan` is the evidence, against repositories it builds rather than
 against this tree. Every leg that expects a refusal is followed by its
 one-change neighbour, and one leg renames a field in the fixture exemplar and
 requires the rename to propagate, which is what says the check holds no copy of
-the header block rather than a well-timed one.
+the header block rather than a well-timed one. The terminology legs carry the
+same pair: one of them changes the word an entry answers with and requires the
+message to follow it. The vocabulary in those legs is a fixture vocabulary and
+none of its words is one this project uses, because a leg written against the
+real register would prove what the register held on the day it ran.
 
 What none of it judges is whether a document is true. That a heading is present
 is a fact about the bytes; that what is written under it still describes what
@@ -442,9 +469,10 @@ spelling of an anchor belongs to the renderer and nothing tracked here writes
 one. Nothing checks that a record carries its alternative and the condition that
 would reverse the decision: three of the records in this tree carry neither
 under any heading a pattern could find, so that rule as stated would refuse the
-tree for what it already is. There is no word list. And no check says whether a
-command shown in a document is executed anywhere or marked as illustrative,
-which needs a suite that can run one.
+tree for what it already is. The word list judges the words in it and not the
+spelling of every other one, which is the half a dictionary would be needed for.
+And no check says whether a command shown in a document is executed anywhere or
+marked as illustrative, which needs a suite that can run one.
 
 The tree it builds:
 
@@ -465,6 +493,7 @@ The tree it builds:
     coverage
     docs-scan
     docs
+    documentation-words
     format
     licence-apply
     licence-scan
