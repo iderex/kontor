@@ -503,6 +503,47 @@ trustworthy: it says the bytes will not change under the job, not that the bytes
 were ever good, which is what the dependency review gate is for and what #114
 carries the rest of.
 
+Two version floors are decided in a record and answered in files elsewhere, and
+one command refuses an answer that has left its floor behind:
+
+    ./floor-scan
+    ./prove-floors
+
+`docs/decisions/0001-means.md` states a floor for PostgreSQL and a floor for
+Node, and closes that passage by saying that raising one is a change to that
+record rather than one made quietly in a workflow file. The first command is
+what makes the sentence refusable. It reads both floors out of the record at
+every run and carries no version number of its own, so raising one there is red
+until each pin follows it, and lowering one where a pin lives is not available
+without editing the record that argues it. A pin is not a floor: a pin says what
+this repository builds and tests against today, and a floor says what an
+operator is told they may run, and when the two disagree the first person to
+find out is the operator on the older version.
+
+It fails closed in both directions. A floor the record does not state is
+refused, because a check with no authority to read must not pass as one that
+read an authority and found nothing. A floor the record states and no tracked
+file answers is refused too, since a floor nothing is pinned to is a floor
+nothing follows.
+
+The second is the evidence, against repositories it builds rather than against
+this tree. Every leg that expects a refusal is followed by its one-change
+neighbour, and the numbers in every fixture are fixture numbers, because a leg
+written against the real record would prove what that record said on the day it
+ran. The near miss worth the most is a pin whose number merely starts with the
+floor, which is what says the comparison is on the whole number rather than on a
+prefix of it.
+
+Three things it does not reach, said plainly because a green run says nothing
+about any of them. The Rust floor is stated in the same record and answered in
+two more places, and it is not read: #131 names PostgreSQL and Node, and whether
+the third belongs beside them is open there rather than settled by a script.
+What the record states for Node is a line rather than a minimum, so what is
+judged is the major, and two pins on that line are indistinguishable here. And
+nothing runs anything against a floor version, which is the rest of #131: the
+pins agreeing with the record says the numbers agree, not that either suite was
+ever exercised against the oldest version an operator is told they may run.
+
 The documentation is read by four rules of its own, two about what a document
 points at, one about how a decision record is shaped and one about the words a
 document is written in:
@@ -615,6 +656,7 @@ The tree it builds:
     docs-scan
     docs
     documentation-words
+    floor-scan
     format
     layout-scan
     licence-apply
@@ -626,6 +668,7 @@ The tree it builds:
     prove-connector-guides
     prove-determinism
     prove-docs-scan
+    prove-floors
     prove-headless
     prove-layout
     prove-licences

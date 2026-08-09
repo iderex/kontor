@@ -1,0 +1,216 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The floor rule, shown to bite.
+#
+#     prove-floors
+#
+# Each leg builds a throwaway repository holding a decision record and the
+# places a version is pinned, runs the shipped scanner against it and reads both
+# the exit code and the reason, so a leg named for one refusal cannot be
+# satisfied by a different one. No leg restates the rule, so a rule loosened
+# where it lives reddens the leg that depended on it rather than passing
+# quietly.
+#
+# Every red leg is followed by its one-change neighbour, which has to pass.
+# Without that pair a leg is also satisfied by a scanner that refuses every tree
+# it is given, and the near misses here are the edits somebody will actually
+# make: the same pin one major out, and a number that merely starts with the
+# floor.
+#
+# THE NUMBERS IN EVERY FIXTURE ARE FIXTURE NUMBERS and none of them is a floor
+# this project states, because a leg written against the real record would prove
+# what that record said on the day it ran rather than what the rule refuses. The
+# shapes are not fixture shapes: they are the rule, and a fixture that wrote a
+# pin some other way would trip nothing.
+#
+# The pins are assembled from parts rather than written out whole. A literal pin
+# in this file would be a pin in tracked text, which is what the scanner reads,
+# so the proof would be judged as though its fixtures were this repository's own
+# answer. Building the string at run time keeps the fixture inside the fixture.
+#
+# The fixtures are repositories rather than loose files, because git is what the
+# scanner asks which files exist, and one leg is a file the working tree holds
+# and git does not.
+#
+# The scanner is run as a path rather than handed to sh, which is how the
+# workflow runs it. prove-headless is where the pair showing why that matters
+# lives, and this file does not restate it.
+#
+# POSIX sh, matching the script it proves, and for the same reason: a leg is an
+# exit code from another program and nothing here needs a language that can do
+# more than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+# What every fixture holds unless the leg changes one thing about it. The
+# defaults agree with each other, so a leg that changes nothing has to pass and
+# a leg that is red is red for the one thing it changed.
+reset() {
+    record='Storage is PostgreSQL, with a floor of major version 9.
+
+The client is built and tested under Node. The floor is the 31 line.'
+    image=9
+    nvmrc='31.4.0'
+    engines='31.4.0'
+    tracked=yes
+    beside=''
+}
+
+# One leg. The repository is built from whatever reset left or the leg changed,
+# and the scanner is pointed at it.
+leg() {
+    what=$1
+    expectation=$2
+    because=${3-}
+
+    tmp=$(mktemp -d)
+    git -c init.defaultBranch=main init -q "$tmp"
+    # This machine's git may be set to rewrite line endings on the way in. The
+    # rule reads lines rather than bytes, so it would survive that, but the
+    # warning it prints on every fixture would bury the legs.
+    git -C "$tmp" config core.autocrlf false
+    mkdir -p "$tmp/docs/decisions" "$tmp/.github/workflows"
+
+    printf '%s\n' "$record" > "$tmp/docs/decisions/0001-means.md"
+
+    {
+        echo 'name: subject'
+        echo ''
+        echo 'on:'
+        echo '  pull_request:'
+        echo ''
+        echo 'jobs:'
+        echo '  one:'
+        echo '    name: One'
+        echo '    runs-on: ubuntu-latest'
+        if [ -n "$image" ]; then
+            echo '    services:'
+            echo '      database:'
+            echo "        image: postgres:$image"
+        fi
+        echo '    steps:'
+        echo '      - run: true'
+    } > "$tmp/.github/workflows/subject.yml"
+
+    if [ -n "$nvmrc" ]; then
+        printf '%s\n' "$nvmrc" > "$tmp/.nvmrc"
+    fi
+
+    if [ -n "$engines" ]; then
+        printf '{\n  "name": "fixture",\n  "private": true,\n  "engines": {\n    "node": "%s"\n  }\n}\n' \
+            "$engines" > "$tmp/package.json"
+    fi
+
+    git -C "$tmp" add -A
+
+    if [ "$tracked" = no ]; then
+        git -C "$tmp" rm -q --cached docs/decisions/0001-means.md
+    fi
+
+    # Written after the add, so the working tree holds it and git does not.
+    if [ -n "$beside" ]; then
+        mkdir -p "$tmp/beside"
+        printf '{\n  "name": "beside",\n  "engines": {\n    "node": "%s"\n  }\n}\n' \
+            "$beside" > "$tmp/beside/package.json"
+    fi
+
+    if out=$("$root/floor-scan" "$tmp" 2>&1); then
+        if [ "$expectation" = green ]; then
+            pass "$what"
+        else
+            fail "$what (it passed, and it was supposed to be refused)"
+        fi
+    else
+        if [ "$expectation" = red ]; then
+            case $out in
+                *"$because"*) pass "$what" ;;
+                *) fail "$what (it was refused, and not for this leg's reason: nothing it printed held '$because')" ;;
+            esac
+        else
+            fail "$what (it was refused, and it was supposed to pass): $out"
+        fi
+    fi
+
+    rm -rf "$tmp"
+}
+
+echo "prove-floors: a pin that has left the floor behind"
+
+reset
+image=10
+leg "a pin one major above the floor is refused" red "pins PostgreSQL 10"
+
+reset
+leg "the same tree with the pin on the floor is accepted" green
+
+reset
+image=90
+leg "a pin whose number merely starts with the floor is refused" red "pins PostgreSQL 90"
+
+reset
+nvmrc='30.9.1'
+leg "a Node pin off the line the record states is refused" red "pins Node 30"
+
+reset
+leg "the same tree with the pin on the line is accepted" green
+
+reset
+engines='29.0.0'
+leg "a package.json pinning another major under engines is refused" red "pins Node 29"
+
+reset
+nvmrc='v31.0.0'
+leg "the same pin written with a leading v is accepted" green
+
+echo "prove-floors: the record is the authority, and it fails closed both ways"
+
+reset
+record='Storage is PostgreSQL, and this sentence does not say which major.
+
+The client is built and tested under Node. The floor is the 31 line.'
+leg "a record stating no floor for a pin the tree carries is refused" red "states no PostgreSQL floor"
+
+reset
+record='Storage is PostgreSQL, with a floor of major version 9.
+
+Somewhere else it says a floor of major version 11.
+
+The client is built and tested under Node. The floor is the 31 line.'
+leg "a record stating two different floors for one thing is refused" red "states 2 different PostgreSQL floors"
+
+reset
+nvmrc=''
+engines=''
+leg "a floor the record states and nothing in the tree answers is refused" red "no tracked file answers it"
+
+reset
+tracked=no
+leg "a tree that does not track the record is refused" red "does not track"
+
+echo "prove-floors: what the rule deliberately does not reach"
+
+reset
+beside='29.0.0'
+leg "a pin the working tree holds and git does not is passed over" green
+
+reset
+record='Storage is PostgreSQL, with a floor of major version 9. An address such
+as postgres://127.0.0.1:5432/kontor carries no major after the scheme and is
+not a pin.
+
+The client is built and tested under Node. The floor is the 31 line.'
+leg "an address with no major after the scheme is passed over" green
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-floors: a leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-floors: every leg did what it says."
