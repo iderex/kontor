@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# The three documentation rules, shown to bite.
+# The four documentation rules, shown to bite.
 #
 #     prove-docs-scan
 #
@@ -24,7 +24,14 @@
 # The record legs write their own exemplar, and one of them renames a field in
 # it and requires the rename to propagate. That leg is what says the scanner
 # holds no copy of the header block: a scanner carrying its own list would stay
-# green while the exemplar moved underneath it.
+# green while the exemplar moved underneath it. The terminology legs are built
+# the same way and one of them changes the word an entry answers with, for the
+# same reason.
+#
+# THE VOCABULARY IN THE TERMINOLOGY LEGS IS A FIXTURE VOCABULARY. Not one of the
+# words below is a word this project uses or refuses, and that is deliberate: a
+# leg written against the real register would prove what the register held on
+# the day it ran rather than that the rule reads a register at all.
 #
 # This tree is not what any leg judges. A run against the real documents proves
 # the state of those documents on the day it ran, and the rule is what this
@@ -80,6 +87,15 @@ Superseded by: nothing
 
 The exemplar this fixture judges the other records against.
 RECORD
+}
+
+# The register the terminology rule reads. A leg that wants a different one
+# writes its own instead of calling this.
+words() {
+    put documentation-words <<'WORDS'
+# The fixture's own reason for its own word.
+widgit -> widget
+WORDS
 }
 
 judge() {
@@ -478,6 +494,122 @@ Something.
 RECORD
 judge "a tree holding records and no exemplar is refused rather than requiring nothing" \
     red records "Failing closed rather than requiring nothing"
+
+echo "prove-docs-scan: a word this project does not write"
+
+fixture
+words
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+
+The widgit list is over there.
+DOC
+judge "a document written in a spelling the register refuses is refused" \
+    red terminology "where this project writes"
+
+fixture
+words
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+
+The widget list is over there.
+DOC
+judge "the same sentence in the spelling the register answers with is accepted" \
+    green terminology ""
+
+fixture
+words
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+
+The widgits are somebody else's plural and this entry is not about them.
+DOC
+judge "the same word with a letter attached to it is not that entry" \
+    green terminology ""
+
+fixture
+words
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+
+The `widgit` field in another project's metadata is spelled their way.
+DOC
+judge "the same word inside backticks is passed over" \
+    green terminology ""
+
+fixture
+words
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+
+Ask the other tool what it holds:
+
+    other-tool --list widgit
+DOC
+judge "the same word in an indented command is passed over" \
+    green terminology ""
+
+fixture
+put documentation-words <<'WORDS'
+# The fixture's own reason for its own word.
+widgit -> gadget
+WORDS
+put README.md <<'DOC'
+A gadget is what this product calls the thing.
+
+The widgit list is over there.
+DOC
+judge "the answer a document is sent to is the register's rather than the scanner's" \
+    red terminology "gadget"
+
+fixture
+put documentation-words <<'WORDS'
+# A reason that belongs to the entry above the blank line rather than below it.
+
+widgit -> widget
+WORDS
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+DOC
+judge "an entry with no reason directly above it is refused" \
+    red terminology "does not say why"
+
+fixture
+words
+put README.md <<'DOC'
+Nothing in this document is written in either spelling.
+DOC
+judge "an entry answering with a word no document uses is refused" \
+    red terminology "no tracked document is written in that answer"
+
+fixture
+put documentation-words <<'WORDS'
+# The fixture's own reason for its own word.
+widget -> a widget
+WORDS
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+DOC
+judge "an entry answering with a word the same entry refuses is refused" \
+    red terminology "which the same entry refuses"
+
+fixture
+put documentation-words <<'WORDS'
+# The fixture's own reason for its own word.
+widgit means widget
+WORDS
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+DOC
+judge "a line in the register that is not shaped like an entry is refused" \
+    red terminology "not shaped like an entry"
+
+fixture
+put README.md <<'DOC'
+A widget is what this product calls the thing.
+DOC
+judge "a tree with no register is refused rather than letting every document write what it likes" \
+    red terminology "Failing closed rather than requiring nothing of any document"
 
 echo "prove-docs-scan: a rule with nothing to judge says so"
 

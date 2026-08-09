@@ -1,0 +1,87 @@
+# The spellings this project's documentation uses, and why each one is here.
+#
+# docs-scan reads this file and nothing else does. An entry is one line holding
+# a spelling that is refused, then `->`, then the spelling to write instead. The
+# line immediately above an entry is its reason, and docs-scan refuses an entry
+# that has none, so a word cannot join this list without somebody writing down
+# what it is for.
+#
+# WHAT THE LIST IS FOR is that the words in the documentation stay the words in
+# the product. An operator reading two documents that name one thing two ways
+# has to work out whether they are the same thing, and that work falls on the
+# reader who trusted the documents most. Where the product has an object with a
+# name, the documentation calls it that name.
+#
+# THE LIST HOLDS THE VOCABULARY THE DOCUMENTATION ALREADY ESTABLISHES. docs-scan
+# refuses an entry whose answer no tracked document uses, so a spelling cannot
+# be required here before anything has been written in it. That fails closed in
+# the other direction too: taking the last use of a word out of the
+# documentation reddens the entry that answers with it, and the repair is to
+# take the entry out in the same change rather than to leave a rule nobody
+# writes to.
+#
+# WHERE A WORD IS SOMEBODY ELSE'S, put it in backticks or in an indented block.
+# A check name, a field in another project's metadata and a package's own name
+# are not this project's prose and are not judged, which is what already keeps
+# `Analyze (csharp)` in docs/quality-parity.md readable: it is the name of a
+# check on another repository and is quoted rather than spelled the way this
+# tree would spell its own.
+#
+# ONE WORD THIS PROJECT SPELLS ITS OWN WAY IS NOT HERE, and the reason is worth
+# reading before adding it. This tree writes `licence` in its own prose, and the
+# file at the root, the name of the licence itself and the field in a package's
+# metadata all spell it the other way. Refusing that spelling would refuse
+# NOTICE.md, which quotes text this project did not write, and it would refuse
+# the sentence in README.md naming the licence. A rule reading bytes cannot tell
+# a proper name from prose, so the word stays out of the list and a reader is
+# what holds it.
+#
+# A PLURAL IS ITS OWN ENTRY. Nothing here knows any English morphology, and a
+# check guessing at it would refuse `buses` for `bus`. Where both the singular
+# and the plural are plausible, both are written down.
+
+# The object is named in docs/model.md as the organisation, so the other
+# spelling is that object's own name written a second way.
+organization -> organisation
+
+# The plural of the entry above, which docs/model.md also uses.
+organizations -> organisations
+
+# The spelling SECURITY.md and the change log record use for what a thing does
+# under a condition, which is the word a threat model turns on.
+behavior -> behaviour
+
+# The plural of the entry above, which docs/decisions/0005-money-and-time.md
+# uses where it says that two ways of valuing a historical pipeline are both
+# legitimate.
+behaviors -> behaviours
+
+# docs/quality-parity.md calls the tool #110 asks for a second static analyser
+# with a different lens, and the documentation arriving with it will name it.
+analyzer -> analyser
+
+# What docs/model.md does to a name before it decides whether two records are
+# the same person, and the spelling the identity rule is written in.
+normalized -> normalised
+
+# The spelling docs/decisions/0008-workflow.md and docs/required-checks.md use
+# for a thing being known for what it is.
+recognized -> recognised
+
+# The change log is two words in every document that names it and in the record
+# that decides it, and it is a thing in this product rather than a file at the
+# root of a repository, which is what the other spelling usually means.
+changelog -> change log
+
+# The client is named in docs/decisions/0009-web-client.md as the web client,
+# two words, and the milestone that builds it uses the same two.
+webclient -> web client
+
+# One word, which is what docs/model.md uses where it makes an address part of
+# the identity rule.
+e-mail -> email
+
+# A change lands as a pull request and the documentation says so in full. The
+# abbreviation reaches somebody who has not met it yet, which is exactly the
+# reader an operator-facing document is written for.
+PR -> pull request

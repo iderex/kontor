@@ -1,12 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Three refusals over the tracked documentation, each of them a question about
+# Four refusals over the tracked documentation, each of them a question about
 # whether a reader can follow what a document says.
 #
 #     docs-scan
 #     docs-scan links
 #     docs-scan documents
 #     docs-scan records
+#     docs-scan terminology
 #     docs-scan /path/to/a/checkout
 #     docs-scan records /path/to/a/checkout
 #
@@ -32,6 +33,13 @@
 # meant to resolve would refuse the sentence explaining it. A document is the
 # case worth holding, because a document is followed rather than executed.
 #
+# terminology judges the words a document is written in against
+# documentation-words, the register saying which spellings this project uses.
+# An operator reading two documents that name one thing two ways has to work out
+# whether they are the same thing, and that work falls on the reader who trusted
+# them most. The register carries a reason for every entry and this file holds no
+# copy of it, so a word joins the rule by being written down there.
+#
 # records judges the naming and the header block of a decision record against
 # the record that states the rule for both, docs/decisions/0001-means.md. The
 # field names and the first section heading are read out of that file rather
@@ -55,6 +63,15 @@
 # A token carrying a placeholder is not a reference. Two shapes appear: angle
 # brackets around a name that varies, and a segment written in upper case where
 # the naming rule asks for lower. Both stand for a name rather than being one.
+#
+# A word inside backticks is somebody else's and is not judged by terminology. A
+# check name on another repository, a field in another project's metadata and a
+# package's own name are quoted rather than spelled the way this tree spells its
+# own, and a rule that could not tell the two apart would refuse the sentence
+# quoting them. GENERAL SPELLING IS NOT JUDGED AT ALL, only the words the
+# register names: deciding whether an unknown word is misspelled needs a
+# dictionary, which is a dependency this tree does not carry and could not reach
+# from a suite that reaches nothing.
 #
 # A token followed by "under #<n>" is a forward reference rather than a dead
 # one. A number under docs/decisions/ is allocated by the issue that asks for
@@ -83,7 +100,7 @@ set -eu
 
 rule=all
 case "${1-}" in
-    links | documents | records)
+    links | documents | records | terminology)
         rule=$1
         shift
         ;;
@@ -95,6 +112,11 @@ cd "$(CDPATH= cd "${1:-$(dirname "$0")}" && pwd)"
 # other record is required to carry. Named once, and the run fails closed where
 # it is absent rather than requiring nothing of anybody.
 exemplar=docs/decisions/0001-means.md
+
+# The register saying which spellings this project's documentation uses. Named
+# once, and the run fails closed where it is absent rather than letting every
+# document write what it likes.
+words=documentation-words
 
 tracked=$(mktemp)
 documents_list=$(mktemp)
@@ -275,6 +297,158 @@ documents() {
     ' || return 1
 }
 
+terminology() {
+    if ! grep -qxF "$words" "$tracked"; then
+        echo "docs-scan: $words is not tracked here, and it is what says which spellings this project's documentation uses. Failing closed rather than requiring nothing of any document." >&2
+        return 1
+    fi
+
+    if [ ! -s "$documents_list" ]; then
+        echo "docs-scan: no tracked document, so the terminology rule judged nothing."
+        return 0
+    fi
+
+    tr '\n' '\0' < "$documents_list" | xargs -0 awk -v words="$words" '
+    # A word is judged where the characters either side of it are neither
+    # letters, digits nor hyphens, so "organisational" is not the entry for
+    # "organisation" and "PR-hygiene" is not the entry for "PR".
+    function bounded(word) {
+        return "(^|[^a-z0-9-])" word "([^a-z0-9-]|$)"
+    }
+
+    # The register, read whole before a document is. Every entry is validated
+    # here rather than where it is used, so a list that cannot be trusted stops
+    # the run instead of quietly judging fewer words than it looks like it does.
+    BEGIN {
+        reason = ""
+        while ((getline line < words) > 0) {
+            if (line ~ /^[ \t]*$/) {
+                reason = ""
+                continue
+            }
+            if (line ~ /^#/) {
+                text = line
+                sub(/^#[ \t]?/, "", text)
+                reason = (reason == "" ? text : reason " " text)
+                continue
+            }
+
+            entry = line
+            sub(/[ \t]+$/, "", entry)
+
+            if (entry !~ / -> /) {
+                printf "docs-scan: %s holds \"%s\", which is not shaped like an entry. An entry is the spelling that is refused, then \" -> \", then the spelling to write instead.\n", words, entry > "/dev/stderr"
+                bad++
+                reason = ""
+                continue
+            }
+
+            wrong = entry
+            sub(/ -> .*$/, "", wrong)
+            right = entry
+            sub(/^.* -> /, "", right)
+
+            if (wrong !~ /^[A-Za-z][A-Za-z -]*$/ || right !~ /^[A-Za-z][A-Za-z -]*$/) {
+                printf "docs-scan: %s holds \"%s\", and a side of an entry is letters, spaces and hyphens. Anything else reaches the pattern this rule matches with, and an entry that is a pattern is one nobody reading the register can predict.\n", words, entry > "/dev/stderr"
+                bad++
+                reason = ""
+                continue
+            }
+
+            if (reason == "") {
+                printf "docs-scan: %s requires \"%s\" and does not say why. The line immediately above an entry is its reason, and an entry with none is a rule an author cannot argue with.\n", words, entry > "/dev/stderr"
+                bad++
+                continue
+            }
+
+            low_wrong = tolower(wrong)
+            low_right = tolower(right)
+            if (match(low_right, bounded(low_wrong))) {
+                printf "docs-scan: %s answers \"%s\" with \"%s\", which the same entry refuses. An entry whose answer it would refuse asks an author to write what they already wrote.\n", words, wrong, right > "/dev/stderr"
+                bad++
+                reason = ""
+                continue
+            }
+
+            n++
+            wrongs[n] = low_wrong
+            rights[n] = right
+            reasons[n] = reason
+            reason = ""
+        }
+        close(words)
+
+        if (bad > 0) {
+            stopped = 1
+            exit 1
+        }
+        if (n == 0) {
+            printf "docs-scan: %s holds no entry, so this rule would refuse nothing. Failing closed rather than passing every document.\n", words > "/dev/stderr"
+            stopped = 1
+            exit 1
+        }
+    }
+
+    FNR == 1 {
+        fenced = 0
+    }
+
+    /^ *```/ {
+        fenced = !fenced
+        next
+    }
+
+    {
+        if (fenced) {
+            next
+        }
+        # An indented block is a command, and a word in one is somebody else s
+        # spelling reproduced so that the reader who runs it gets what they
+        # expect. The same bound the document reference rule states.
+        if ($0 ~ /^(    |\t)/) {
+            next
+        }
+
+        line = $0
+        # A span in backticks is a quoted name rather than this project s prose,
+        # and a link target is a path or an address rather than a sentence.
+        gsub(/`[^`]*`/, " ", line)
+        gsub(/\]\([^)(]*\)/, "]()", line)
+        low = tolower(line)
+
+        for (i = 1; i <= n; i++) {
+            if (match(low, bounded(wrongs[i]))) {
+                printf "docs-scan: %s:%d writes \"%s\" where this project writes \"%s\". %s Where the word is somebody else s, put it in backticks and it is passed over.\n", FILENAME, FNR, wrongs[i], rights[i], reasons[i] > "/dev/stderr"
+                refused++
+            }
+            if (!(i in used) && match(low, bounded(tolower(rights[i])))) {
+                used[i] = 1
+            }
+        }
+    }
+
+    END {
+        if (stopped) {
+            exit 1
+        }
+
+        for (i = 1; i <= n; i++) {
+            if (!(i in used)) {
+                printf "docs-scan: %s answers \"%s\" with \"%s\", and no tracked document is written in that answer. The register holds the vocabulary the documentation already establishes, so either the word belongs somewhere in it or the entry does not belong here.\n", words, wrongs[i], rights[i] > "/dev/stderr"
+                unused++
+            }
+        }
+
+        if (refused > 0 || unused > 0) {
+            printf "docs-scan: %d line(s) written in a spelling %s refuses, and %d entr(ies) answering with a word no document uses.\n", refused, words, unused > "/dev/stderr"
+            exit 1
+        }
+
+        printf "docs-scan: %d term(s) in %s, every answer in use and no document written against one of them. General spelling is not judged, only these; whether a document uses the right word for the thing it describes is not judged either.\n", n, words
+    }
+    ' || return 1
+}
+
 records() {
     if [ ! -s "$records_list" ]; then
         echo "docs-scan: no decision record in this tree, so the record rule judged nothing."
@@ -431,13 +605,15 @@ records() {
 }
 
 case "$rule" in
-    links)     links     || status=1 ;;
-    documents) documents || status=1 ;;
-    records)   records   || status=1 ;;
+    links)       links       || status=1 ;;
+    documents)   documents   || status=1 ;;
+    records)     records     || status=1 ;;
+    terminology) terminology || status=1 ;;
     all)
-        links     || status=1
-        documents || status=1
-        records   || status=1
+        links       || status=1
+        documents   || status=1
+        records     || status=1
+        terminology || status=1
         ;;
 esac
 

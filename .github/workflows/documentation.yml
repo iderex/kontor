@@ -1,9 +1,14 @@
-# Three refusals over the tracked documentation, and the evidence that they
+# Four refusals over the tracked documentation, and the evidence that they
 # bite. A decision record under docs/decisions/ is what later work is argued
 # against, docs/layout.md is where a boundary is reasoned about, and
 # docs/licence.md is what an operator reads before deploying. A document
 # pointing at a file the tree does not hold costs the reader who trusted it the
 # time to find that out, and #115 is where that is asked for.
+#
+# The fourth is about the words rather than the paths. An operator reading two
+# documents that name one thing two ways has to work out whether they are the
+# same thing, and documentation-words is the register that says which name this
+# project uses, with a reason on the line above every entry.
 #
 # The record rules are judged against docs/decisions/0001-means.md, which is the
 # record that states how a record is named and which header block it carries.
@@ -60,6 +65,20 @@ jobs:
           persist-credentials: false
       - name: Reject a decision record that is not shaped like one
         run: ./docs-scan records
+
+  terminology:
+    name: Reject a document written in a word this project does not use
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject a document written in a word this project does not use
+        # Its own job rather than a step beside the reference rules, because a
+        # red tick should name one thing: this one is about the words a document
+        # is written in and those are about what it points at.
+        run: ./docs-scan terminology
 
   proof:
     name: Prove the documentation rules bite
