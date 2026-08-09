@@ -118,6 +118,14 @@ jobs:
         # The rule lives in the script, which ./test also runs before it
         # compiles anything, so a contributor sees the same refusal before
         # pushing rather than a connection error in the middle of a run.
+        #
+        # The script now carries a third rule that this job name does not
+        # describe: library code outside a connector may not reach an address,
+        # which is the boundary docs/decisions/0011-connectors.md states. The
+        # name says less than the job refuses rather than more, and it is left
+        # alone deliberately, because it is quoted inside pasted command output
+        # in docs/required-checks.md and editing that output would make a record
+        # of what a command printed say something it did not.
         run: ./test-scan
 
   marked-register:

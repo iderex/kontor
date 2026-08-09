@@ -342,6 +342,19 @@ nothing depending on the API layer and reporting and workflow not depending on
 each other are both statements about an edge. The separation of reporting from
 workflow was in the list below until this commit and belongs above it now.
 
+Also enforced, and it is the first of the invariants #113 asks for rather than a
+statement about an edge: library code under a crate `src/` may not open an
+outbound connection unless the crate is a connector, by `test-scan`, whose
+evidence is `prove-headless`. The exempt set is decided by the crate name, the
+same way `connector-guide-scan` decides it and for the reason
+[`docs/decisions/0011-connectors.md`](decisions/0011-connectors.md) gives, and
+the workspace holds no connector today. How much the rule found to judge here is
+the third clause of what `test-scan` prints rather than a number written down in
+this note. Two bounds go with it. It reads the shapes in
+the register `test-scan` already holds, which is a floor rather than a list of
+every way to reach an address, and it reads the code with comments and string
+literals blanked, so a reach hidden in a string in library code passes.
+
 Written down only, meaning a person is the whole mechanism: the refusal of any
 write path that reaches the record tables without writing the log; the rule that
 the API layer holds no business rule; the rule that the client depends on the
