@@ -302,17 +302,24 @@ which reads like a flake and passes on the next machine.
     ./test-scan
     ./prove-headless
 
-The second is the evidence that the first bites, in two groups because the scan
-carries two rules over one register of reaches. On a test target: an unmarked
-test that opens an outbound socket is refused, the same test marked for an
-outbound network is accepted, a marking naming something outside the four is
+The second is the evidence that the first bites, in three groups because the
+scan carries three rules over one register of reaches. On a test target: an
+unmarked test that opens an outbound socket is refused, the same test marked for
+an outbound network is accepted, a marking naming something outside the four is
 refused, and a test that reaches for nothing passes. On a test inside a crate's
 `src/`, where no marking is possible: one that opens a socket is refused, the
-same one with the reach taken out passes, the same reach in library code beside
-a clean test module passes, and a test module declared as a file rather than
-written inline is followed into that file and refused there.
+same one with the reach taken out passes, a display reached in library code
+beside a clean test module passes, and a test module declared as a file rather
+than written inline is followed into that file and refused there.
 
-A third pair is about the harness rather than the rule. Every leg runs the
+The third group is not about a test at all, and the paragraph below the next one
+is where it is described. Library code that opens an outbound socket is refused,
+the same crate with the reach taken out passes, the same reach in a crate named
+as a connector passes, the same crate renamed off that prefix is refused again,
+and a module naming every one of those shapes in a doc comment and reaching for
+none of them passes.
+
+A fourth pair is about the harness rather than the rule. Every leg runs the
 shipped scan as a path, the way `./test` and the workflow run it, and the pair
 shows why: the same file with its executable bit off is refused when run that
 way and accepted when passed to `sh`, so a proof written the second way is green
@@ -366,12 +373,10 @@ any of the four, and the message it earns names the move to a target under
 name;` is followed into the file it names, and so is anything that file declares
 in turn.
 
-Two bounds on that half, stated because neither is visible from a green run.
-Ordinary library code under `src/` is not judged by either half: a crate that
-opens a socket outside a test earns nothing here, and the pattern over the tree
-that would refuse one is #113's. And the register of reaches is a floor rather
-than a guarantee, in both halves, since it holds the shapes somebody could
-plausibly write today and not one nobody has written yet.
+One bound on that half, stated because it is not visible from a green run: the
+register of reaches is a floor rather than a guarantee, since it holds the
+shapes somebody could plausibly write today and not one nobody has written yet.
+That bound is the same in every half below.
 
 How much that half found to judge is printed rather than written here, in the
 second clause of the scan's own output, because a count in a document drifts
@@ -383,6 +388,32 @@ While that clause says the half judged nothing, the only evidence it refuses
 anything is `./prove-headless` and its fixtures. That is the order the gap was
 closed in deliberately: before the first in-crate test arrives rather than after
 somebody has written one against no gate.
+
+The same file carries one rule that is not about a test. Ordinary library code
+under `src/` may not open an outbound connection unless the crate holding it is
+a connector, which is the boundary
+[`docs/decisions/0011-connectors.md`](docs/decisions/0011-connectors.md) states
+in terms a review can refuse a proposal with, and which #113 asked for a pattern
+over. This passage said no command judged such code and named that issue as
+where the pattern belonged, and it now judges it.
+
+Only the outbound row of the register is read there. The other three are not
+boundaries: the store module is meant to speak to a database, and a crate that
+draws is a question about a client rather than about this stack. What makes a
+crate a connector is its name, which is the answer `connector-guide-scan` and
+the connector module already give, so the exempt set is decided by something a
+crate carries before it has declared anything. The workspace holds none today,
+which the third clause of the same output says, and the evidence that any of it
+refuses anything is `./prove-headless` again.
+
+That rule reads the source with its comments and string literals blanked out,
+and the two halves above read the bytes as written. The difference is deliberate
+and it is a bound in both directions. A test is short and a socket address
+written as a string is exactly the case worth catching there. Library code in
+this tree is mostly prose, and a module documenting the boundary names every
+shape a reach is written with, so a rule reading the comments would refuse the
+file that explains the rule; a reach hidden in a string literal in library code
+is what that costs.
 
 Both are the server's. The client workspace has no tests and no runner, and #63
 is where its half belongs; a client leg that ran nothing and reported green

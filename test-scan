@@ -8,6 +8,9 @@
 #     test-scan
 #     test-scan --root <directory>
 #
+# Three rules over one register, and the third of them is a boundary rule rather
+# than a rule about tests. The paragraphs below take them in order.
+#
 # The four things a test in this project can need are a display server, an
 # outbound network, a simulator and a database. They are the four
 # docs/layout.md names, and each has a feature named for it. A test target that
@@ -37,13 +40,40 @@
 # than an inline module the file it names is read whole, and so is anything that
 # file declares in turn, because all of it compiles only under the same cfg.
 #
-# WHAT IT DOES NOT REACH, STILL. Ordinary library code under src/ is not judged
-# here, in either half. A crate that opens a socket outside a test is not this
-# file's subject and no message here mentions it: that is the outbound boundary
-# of docs/decisions/0011-connectors.md, and the pattern over the tree that would
-# refuse one belongs to #113. A `#[cfg(test)]` module written inside a target
-# under tests/ is also left alone, because that target already carries the
-# marking this file checks in the first half.
+# THE THIRD HALF, WHICH IS NOT ABOUT A TEST AT ALL. Ordinary library code under
+# src/ may not open an outbound connection unless the crate holding it is a
+# connector. That is the outbound boundary of
+# docs/decisions/0011-connectors.md, stated there as a rule a review refuses a
+# proposal with, and #113 is where a pattern over the tree was asked for. It is
+# here rather than in a file of its own for one reason: the register below is
+# the only statement in the tree of what reaching a network looks like, and a
+# second pattern over the same shapes written somewhere else is the copy that
+# drifts. So this file's name is now narrower than what it does, and that was
+# chosen over a copy rather than overlooked.
+#
+# Only the outbound row is read by that half. The other three are not boundary
+# rules: the store module is meant to speak to a database, and a crate that
+# draws is a question about a client rather than about this stack.
+#
+# WHAT MAKES A CRATE A CONNECTOR is its name, which is the same answer
+# connector-guide-scan and the connector module give, for the reason
+# docs/decisions/0011-connectors.md states: the question has to be askable of a
+# crate that has declared nothing, and a crate that has declared nothing has
+# only its name. The workspace holds no connector today, so the exempt set is
+# empty and the refusal is proved against fixtures rather than against this
+# tree.
+#
+# The third half matches against the projection rather than against the source,
+# and the two other halves do the opposite. A test is short and a socket address
+# written as a string literal is exactly the case worth catching there. Library
+# code in this tree is mostly prose, and a doc comment saying that a module
+# reaches no network names the same shapes a reach does, so a rule reading the
+# comments would refuse the file for describing the rule. That difference is a
+# choice and this is where it is recorded.
+#
+# A `#[cfg(test)]` module written inside a target under tests/ is left alone,
+# because that target already carries the marking this file checks in the first
+# half.
 #
 # The authority for what is marked is cargo, read through `cargo metadata`, not a
 # path convention: a convention is a second statement of the truth that drifts
@@ -113,6 +143,16 @@ const needs = [
 ];
 
 const known = new Set(needs.map((n) => n.feature));
+const outbound = needs.find((n) => n.feature === "needs-an-outbound-network");
+
+// The name that makes a workspace crate a connector, and so exempts its library
+// code from the third half. It is repeated here because sh cannot read a Rust
+// constant, which is the same repetition connector-guide-scan carries and it is
+// justified the same way: ./prove-headless has a pair of legs against it, one
+// crate under the prefix and the same crate renamed, so a prefix changed in the
+// connector module and not here stops exempting anything and a leg says so.
+const CONNECTOR_PREFIX = "kontor-connector-";
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -266,6 +306,19 @@ function rsFiles(dir) {
 const regions = [];
 const whole = new Set();
 
+// Where the test source sits inside each file it shares with library code, as
+// half open byte ranges into that file. The third half blanks these before it
+// looks, so a reach the second half already refused is not counted twice under
+// a message offering a different repair.
+const testSpans = new Map();
+
+function noteTestSpan(file, from, to) {
+  const key = path.resolve(file);
+  const spans = testSpans.get(key) || [];
+  spans.push([from, to]);
+  testSpans.set(key, spans);
+}
+
 function lineOf(src, index) {
   return src.slice(0, index).split("\n").length;
 }
@@ -299,14 +352,17 @@ function takeCfgTestItems(file) {
     if (declaration) {
       const target = moduleFile(file, declaration[1]);
       if (target) {
+        noteTestSpan(file, found.index, itemEnd(code, head));
         takeWholeFile(target);
         continue;
       }
     }
+    const end = itemEnd(code, head);
+    noteTestSpan(file, found.index, end);
     regions.push({
       file,
       line: lineOf(src, found.index),
-      text: src.slice(head, itemEnd(code, head)),
+      text: src.slice(head, end),
     });
   }
 }
@@ -350,9 +406,11 @@ process.stdin.on("data", (d) => (raw += d)).on("end", () => {
 
   // The second half. Every crate says where its own source is, so the walk is
   // over what cargo resolved rather than over a directory shape assumed here.
+  const library = [];
   for (const pkg of meta.packages) {
     for (const file of rsFiles(path.join(path.dirname(pkg.manifest_path), "src"))) {
       takeCfgTestItems(file);
+      if (!pkg.name.startsWith(CONNECTOR_PREFIX)) library.push(file);
     }
   }
 
@@ -370,10 +428,36 @@ process.stdin.on("data", (d) => (raw += d)).on("end", () => {
     }
   }
 
+  // The third half. What is left of the source of a crate once the test items
+  // above are blanked out is library code, and library code outside a connector
+  // may not reach outward at all.
+  let judged = 0;
+  for (const file of library) {
+    if (whole.has(path.resolve(file))) continue;
+    judged += 1;
+    const src = fs.readFileSync(file, "utf8");
+    const code = codeOnly(src).split("");
+    for (const [from, to] of testSpans.get(path.resolve(file)) || []) {
+      for (let k = from; k < to && k < code.length; k += 1) {
+        if (code[k] !== "\n") code[k] = " ";
+      }
+    }
+    const text = code.join("");
+    const where = path.relative(process.cwd(), file) || file;
+    for (const reach of outbound.reaches) {
+      if (reach.test(text)) {
+        problems.push(
+          `${where}: library code reaches for ${outbound.what} (${reach.source}) in a crate that is not a connector. Only a crate named ${CONNECTOR_PREFIX}something may reach an address, and only one its declaration names, which docs/decisions/0011-connectors.md decides. Move the reach into a connector crate, or take it out.`,
+        );
+        break;
+      }
+    }
+  }
+
   if (problems.length > 0) {
     for (const line of problems) process.stderr.write(`test-scan: ${line}\n`);
     process.stderr.write(
-      "test-scan: an unmarked test reaching for one of these makes the default suite need something a fresh clone does not have, and the failure it produces looks like a flake.\n",
+      "test-scan: an unmarked test reaching for one of these makes the default suite need something a fresh clone does not have, and the failure it produces looks like a flake. A reach in library code outside a connector is the other rule here, and it makes the sentence this project is sold on false rather than making a suite flaky.\n",
     );
     process.exit(1);
   }
@@ -381,8 +465,11 @@ process.stdin.on("data", (d) => (raw += d)).on("end", () => {
   const second = regions.length === 0
     ? "no test lives inside a crate src/, so that half judged nothing"
     : `${regions.length} test module(s) inside a crate src/, none of them reaching for any of the four`;
+  const third = judged === 0
+    ? "no library source outside a connector, so the outbound boundary judged nothing"
+    : `${judged} library source file(s) outside a connector, none of them reaching outward`;
   process.stdout.write(
-    `test-scan: ${looked} test target(s), every reach marked for what it needs; ${second}.\n`,
+    `test-scan: ${looked} test target(s), every reach marked for what it needs; ${second}; ${third}.\n`,
   );
 });
 '

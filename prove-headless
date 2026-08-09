@@ -323,10 +323,15 @@ mod tests {
 # rather than in the test, one line above a test module that reaches for
 # nothing. A scan that took the file instead of the item would refuse this, and
 # it would be refusing library code under a message about tests.
-library_reaches_the_network='use std::net::TcpStream;
-
-pub fn dial() {
-    let _ = TcpStream::connect("example.org:80");
+#
+# It reached for a network until the outbound boundary landed, and a display is
+# what it reaches for now. The two rules meet on exactly that fixture: library
+# code reaching outward is refused by the group below, so the old bytes would
+# have made this leg red for the other rule and it would have read as this one
+# failing. A display is not a boundary, so the leg goes on saying what it was
+# written to say and says it about one rule.
+library_reaches_a_display='pub fn draw() {
+    let _ = std::env::var("DISPLAY");
 }
 
 #[cfg(test)]
@@ -355,11 +360,85 @@ src_case "a test inside src/ that opens an outbound socket is refused" \
 src_case "the same test with the reach taken out is accepted" \
     "$in_crate_reaches_nothing" "" "" green
 
-src_case "the same reach in library code beside a clean test module is accepted" \
-    "$library_reaches_the_network" "" "" green
+src_case "a display reached in library code beside a clean test module is accepted" \
+    "$library_reaches_a_display" "" "" green
 
 src_case "a test module declared as a file, reaching the network, is refused" \
     "$declares_a_test_module" "tests.rs" "$test_module_file" red
+
+echo "prove-headless: the outbound boundary in library code"
+
+# The third rule, and the one that is not about a test. Library code outside a
+# connector may not reach an address, which docs/decisions/0011-connectors.md
+# decides and #113 asked for a pattern over. What moves between these legs is
+# the crate name and the bytes of one file, so the exemption is shown to be the
+# name rather than anything the fixture happens to also carry.
+boundary_case() {
+    what=$1
+    crate=$2
+    lib=$3
+    expectation=$4
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/crates/probe/src"
+    cat > "$tmp/Cargo.toml" <<EOF
+[workspace]
+resolver = "3"
+members = ["crates/probe"]
+EOF
+    {
+        echo '[package]'
+        echo "name = \"$crate\""
+        echo 'version = "0.0.0"'
+        echo 'edition = "2024"'
+        echo 'publish = false'
+    } > "$tmp/crates/probe/Cargo.toml"
+    printf '%s\n' "$lib" > "$tmp/crates/probe/src/lib.rs"
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" "$root/test-scan" --root "$tmp"
+    else
+        expect_green "$what" "$root/test-scan" --root "$tmp"
+    fi
+
+    rm -rf "$tmp"
+}
+
+dials_out='use std::net::TcpStream;
+
+pub fn fetch() {
+    let _ = TcpStream::connect("example.org:80");
+}'
+
+dials_nothing='pub fn fetch() {
+}'
+
+# The case the projection is for, and the reason the third rule reads the code
+# rather than the source. A module documenting the boundary names every shape a
+# reach is written with, and a rule reading its comments would refuse the file
+# that explains the rule.
+says_it_does_not_dial='//! Nothing here opens a TcpStream, a UdpSocket or anything reqwest builds.
+
+pub fn fetch() {
+}'
+
+boundary_case "library code that opens an outbound socket is refused" \
+    probe "$dials_out" red
+
+boundary_case "the same crate with the reach taken out is accepted" \
+    probe "$dials_nothing" green
+
+# The exemption, in both directions, which is the pair that says it is the name
+# doing the work. A prefix changed in the connector module and not in test-scan
+# turns the first of these two red.
+boundary_case "the same reach in a crate named as a connector is accepted" \
+    kontor-connector-probe "$dials_out" green
+
+boundary_case "the same connector crate renamed off the prefix is refused" \
+    kontor-connector "$dials_out" red
+
+boundary_case "a module naming the shapes in a doc comment and reaching for none is accepted" \
+    probe "$says_it_does_not_dial" green
 
 echo "prove-headless: the harness runs the scan the way the workflow does"
 
