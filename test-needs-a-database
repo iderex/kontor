@@ -25,6 +25,14 @@
 # a suite invented after the code is a suite shaped by what the code happens to
 # do.
 #
+# The value this takes is a connection string and a connection string carries a
+# password, so nothing here prints it. What is printed is the address, which is
+# the host and port with everything before the last @ dropped. The same rule is
+# read by a test in the target below, where the refusal for a value that cannot
+# be parsed is a function a test can call rather than the argument of a panic.
+# No gate in this tree reads shell, so the line here is held by a reader instead,
+# and #91 is where a mechanism for it belongs.
+#
 # POSIX sh, matching ./build and ./test.
 set -eu
 
@@ -41,7 +49,24 @@ if [ -z "${KONTOR_TEST_DATABASE_URL-}" ]; then
     exit 1
 fi
 
-echo "test-needs-a-database: against $KONTOR_TEST_DATABASE_URL"
+# The address rather than the value. Saying which database a run went against
+# is worth a line; saying it by printing the connection string puts a password
+# into a terminal, into a workflow log that is kept, and into the next bug
+# report somebody pastes it into. Everything before the last @ is dropped, and a
+# value with no scheme in it is not printed at all rather than printed on the
+# chance that it holds no password.
+case $KONTOR_TEST_DATABASE_URL in
+    *://*)
+        address=${KONTOR_TEST_DATABASE_URL#*://}
+        address=${address%%/*}
+        address=${address%%\?*}
+        address=${address##*@}
+        echo "test-needs-a-database: against $address"
+        ;;
+    *)
+        echo "test-needs-a-database: KONTOR_TEST_DATABASE_URL carries no \"://\", and what it does carry is not printed here, because a connection string carries a password. The suite below is what refuses it."
+        ;;
+esac
 
 # The feature is named on the command line here and only here. It is off
 # everywhere else, which is what keeps these targets out of ./test.
