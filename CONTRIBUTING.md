@@ -109,6 +109,43 @@ macro. Nothing is exempt from the encoding rule by detection, which is
 deliberate: a detector reading a mangled file as binary would exempt exactly the
 file the rule exists for.
 
+What may not be in the tree at all is a credential, and two commands are about
+that:
+
+    ./secret-scan
+    ./prove-secret-scan
+
+The first refuses a tracked file carrying a shape a credential usually has: a
+private key block, credentials inside a URL, a quoted literal assigned to a name
+that means a credential, and the token formats some services issue in a shape
+nothing else has. Which shapes those are and how many the tree carries are
+printed by the command rather than written here. A value written into a file and
+committed is in every clone and in every fork, and it stays in the history after
+somebody takes it out of the file, so rotating it at the service that issued it
+is the only repair and the cheap moment to catch one is before it is pushed.
+
+`secrets-allowed` is where a value that has that shape and is not a credential
+is declared, one line per value with the reason on the line above it, in the
+shape `licences-allowed` already uses. It fails closed in both directions: an
+entry with no reason is refused, and so is an entry no tracked file answers, so
+taking the last use of a value out of the tree reddens the entry that declared
+it and the repair is to take the entry out in the same change.
+
+The refusal names the file, the line and the shape, and never the value. A check
+that quoted what it found would put the credential into the log of every run
+that refused it, which is the failure it exists against arriving through the
+door marked evidence. `./prove-secret-scan` is the evidence, against
+repositories it builds rather than against this tree, and one of its legs reads
+what a refusal did not say rather than only the code it exited with.
+
+Three things it does not reach, said plainly because a green run says nothing
+about any of them. A secret that looks like nothing passes: the shapes are a
+floor holding what a credential usually looks like rather than a statement that
+the tree carries none. Whether a declared value is live is somebody's judgement
+and no reading of the tree checks it, which is what the reason beside each entry
+is for. And it reads the tree rather than the history, so it refuses the commit
+that adds a credential and says nothing about one that already landed.
+
 A connector carries two things, and only one of them is code. Two more commands
 are about the other one:
 
@@ -509,9 +546,12 @@ The tree it builds:
     prove-pr-body
     prove-quality
     prove-sealed
+    prove-secret-scan
     prove-workflow-scan
     regenerate
     rust-toolchain.toml
+    secret-scan
+    secrets-allowed
     server
     test
     test-needs-a-database
