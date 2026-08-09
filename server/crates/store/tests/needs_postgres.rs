@@ -22,6 +22,28 @@ use std::time::Duration;
 /// operator and a workflow do not each learn a private one.
 const URL: &str = "KONTOR_TEST_DATABASE_URL";
 
+/// Why a value could not be read as a URL, said without saying what the value
+/// held.
+///
+/// A connection string carries a password, and the output of a failing test
+/// goes wherever test output goes: a terminal somebody screenshots, a workflow
+/// log that is kept, a bug report. So this reads the value and repeats none of
+/// it. It is a function returning a string rather than the argument of a
+/// `panic!` so that a test can read what it says.
+fn why_it_is_not_a_url(url: &str) -> String {
+    let seen = if url.is_empty() {
+        "set to nothing at all"
+    } else {
+        "set to a value carrying no \"://\""
+    };
+    format!(
+        "{URL} is {seen}, so there is no host and port to read out of it. What \
+         it holds is not repeated here, because a connection string carries a \
+         password. The shape this suite wants is \
+         postgres://user:password@host:port/name."
+    )
+}
+
 /// The host and port out of a `postgres://user:pass@host:port/name` string.
 ///
 /// Deliberately not a URL parser. What this file needs is the two components a
@@ -48,8 +70,7 @@ fn the_database_this_suite_needs_is_reachable() {
         )
     });
 
-    let address =
-        host_and_port(&url).unwrap_or_else(|| panic!("{URL} is not a postgres:// URL: {url}"));
+    let address = host_and_port(&url).unwrap_or_else(|| panic!("{}", why_it_is_not_a_url(&url)));
 
     let socket = address
         .parse()
@@ -62,6 +83,36 @@ fn the_database_this_suite_needs_is_reachable() {
         }
         Err(error) => panic!("nothing answered at {address}: {error}"),
     }
+}
+
+/// The near miss this is written against is one edit: putting the value back
+/// into the sentence it was taken out of. The last assertion is what stops the
+/// first two being facts about a constant, since a message that never reads its
+/// argument cannot repeat it and cannot be made to.
+#[test]
+fn the_refusal_for_a_value_that_is_not_a_url_repeats_none_of_it() {
+    let password = "9tKmNotForALog";
+    let value = format!("kontor:{password}@db.example:5432/kontor");
+
+    assert!(
+        host_and_port(&value).is_none(),
+        "the fixture has to be a value this refusal is reached for"
+    );
+
+    let refusal = why_it_is_not_a_url(&value);
+    assert!(
+        !refusal.contains(password),
+        "the refusal carries the password out of the value: {refusal}"
+    );
+    assert!(
+        !refusal.contains(&value),
+        "the refusal carries the value: {refusal}"
+    );
+    assert_ne!(
+        why_it_is_not_a_url(""),
+        refusal,
+        "the refusal does not read the value at all, so nothing above could have failed"
+    );
 }
 
 #[test]
