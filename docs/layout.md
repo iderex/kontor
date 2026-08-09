@@ -222,9 +222,18 @@ another route can break it.
 
 Three directions are refused.
 
-Nothing depends on the API layer. It is the top of the stack and it is the only
-module with no dependents inside the server, so a change to a request shape can
-never reach the record module.
+Nothing in the stack depends on the API layer. It is the top, so a change to a
+request shape can never reach the record module.
+
+This sentence said the API layer was the only module with no dependents inside
+the server, and something does depend on it. `kontor`, the binary, depends on
+`kontor-api`, which is what a composition root is for. The stack is the library
+modules; the binary sits outside it, nothing may depend on the binary, and it
+reaches the stack through the top and nowhere else, so composing the server
+cannot become the second route into the record module that this section exists
+to refuse. The narrowing was made when the rule stopped being a sentence and
+became a command, because a check written from the old wording refuses an edge
+that is correct, and it was found by writing that check.
 
 Nothing reaches the record tables except through the write path that writes the
 log. Not the import module, not a workflow action, not a migration that thinks it
@@ -240,6 +249,31 @@ reporting engine's internals.
 The client side has one direction of its own. The client packages depend on the
 generated contract and never on server internals, which is what makes the
 contract of #25 worth generating rather than writing twice.
+
+One of those directions is refused by a command rather than by a reader:
+
+    ./layout-scan
+    ./prove-layout
+
+The first reads the manifests under `server/crates/` and refuses an edge this
+section does not allow: one pointing up a level, one pointing sideways between
+reporting and workflow, one into the composition root, one into the connector
+module, one out of the money module, an edge to a crate that is not there, and a
+crate this section does not place at all. The last of those is what makes the
+gate fail closed on a module somebody adds without deciding where it sits. The
+second is the evidence that each of those refusals bites, against fixture graphs
+it builds rather than against this tree, because a crate added here pointing the
+wrong way would either be refused by the gate it is meant to prove or would need
+an exclusion, and an exclusion list is the thing that quietly grows.
+
+What that pair does not reach is worth stating rather than leaving to be found.
+Its subject is the crate directories under `server/crates/`, so a workspace
+member declared from some other path is outside it, and `server/Cargo.toml`
+holds one today in `fixtures/lint`, which is the lint gate's subject rather than
+a module of the stack. Closing that would mean deciding where a module may live,
+which is a wider decision than adding the check. The other three directions in
+this section are assertions about calls rather than about edges between crates,
+and no command reads any of them.
 
 ## Where the four recurring additions go
 
@@ -300,27 +334,29 @@ refuses a breach of, and with it that no cycle exists among the server crates,
 which cargo refuses on its own. Neither of those is the direction rule. A cycle
 is refused; a single arrow pointing the wrong way is not.
 
-Written down only, meaning a person is the whole mechanism: the direction
-dependencies run; the refusal of any write path that reaches the record tables
-without writing the log; the separation of reporting from workflow; the rule that
+Also enforced, since this note first said none of it was: the direction the
+dependencies run between the crates under `server/crates/`, by `layout-scan`,
+whose refusals are the ones the section on the stack lists and whose evidence is
+`prove-layout`. That covers two of the three refused directions there, since
+nothing depending on the API layer and reporting and workflow not depending on
+each other are both statements about an edge. The separation of reporting from
+workflow was in the list below until this commit and belongs above it now.
+
+Written down only, meaning a person is the whole mechanism: the refusal of any
+write path that reaches the record tables without writing the log; the rule that
 the API layer holds no business rule; the rule that the client depends on the
 generated contract and not on server internals; and every statement above about
-which directory a kind of file belongs in.
+which directory a kind of file belongs in. Each of those is a rule about a call
+or about a placement rather than about an edge between two crates, which is why
+the check above does not reach them.
 
 What the tree does check is a different set, and it is worth naming so that the
-two are not confused:
+two are not confused. Which workflows exist is printed rather than pasted here,
+for the reason the section above gives about lists in documents: this one was
+pasted, and it was two files out of date before the file that made it three was
+added.
 
     ls .github/workflows/
-    build.yml
-    client-types.yml
-    dco.yml
-    dependency-review.yml
-    format-and-lint.yml
-    scorecard.yml
-    tests.yml
-    text-determinism.yml
-    unicode-guard.yml
-    zizmor.yml
 
 Those judge sign off, dependency advisories, supply chain hygiene, line endings
 and encoding in tracked text, dangerous Unicode, the workflow files themselves,
@@ -331,22 +367,25 @@ want them, whether either linter has anything to say at a level where a warning
 fails, whether a lint suppression names its rule and gives its reason, whether
 both suites are green, whether every test that reaches for a display, a network,
 a simulator or a database is marked for it, and whether the unit suite still
-reaches as much of the server as the floor in `coverage` says. None of them
-reads a module boundary.
+reaches as much of the server as the floor in `coverage` says. One of them reads
+a module boundary, and it is the one added with `layout-scan`.
 
-The build one is the closest, and the distance is worth stating rather than
-blurring. Cargo refuses a dependency cycle, so the arrows cannot be made to
-point both ways at once. It does not refuse an arrow pointing the wrong way: a
-line added to `server/crates/reporting/Cargo.toml` making the reporting engine
-depend on the workflow engine compiles, and this note is the only thing that
-says it may not. #116 is where that becomes a test.
+Cargo is still the wrong thing to lean on here, and the distance is worth
+keeping stated rather than blurred now that something else covers it. Cargo
+refuses a dependency cycle, so the arrows cannot be made to point both ways at
+once. It does not refuse an arrow pointing the wrong way: a line added to
+`server/crates/reporting/Cargo.toml` making the reporting engine depend on the
+workflow engine compiles. What refuses it is `layout-scan`, and `prove-layout`
+has that exact line as one of its legs.
 
-Two issues would move items from the second list to the first. #116 turns the
-architecture rules into tests, which is where the dependency direction and the
-single write path belong, because both are properties of the compiled graph
-rather than of the text. #113 enforces the invariants that are greppable, which
-is the cheaper half and covers the shapes that a search can refuse.
+Two issues would move what is left of the second list to the first. #116 turns
+the architecture rules into tests and holds the three that remain, which are the
+single write path, the one module that evaluates a permission, and the client
+depending only on the generated contract; each of those is about a call rather
+than about an edge, and each waits on a module that is empty today. #113
+enforces the invariants that are greppable, which is the cheaper half and covers
+the shapes that a search can refuse.
 
-Until those land, this note is an explanation of the rules and not the rules
-themselves, and a change that violates one of them will be caught by a reader or
-not at all.
+Until those land, the rest of this note is an explanation of the rules and not
+the rules themselves, and a change that violates one of them will be caught by a
+reader or not at all.
