@@ -686,6 +686,38 @@ spelling of every other one, which is the half a dictionary would be needed for.
 And no check says whether a command shown in a document is executed anywhere or
 marked as illustrative, which needs a suite that can run one.
 
+One document is read a fifth way, because it is the one that gets copied from
+rather than read. `docs/sync-protocol.md` is what a client is written against,
+including a client somebody outside this repository writes, and every message
+shape in it carries a table of its fields and one example:
+
+    ./sync-example-scan.js docs/sync-protocol.md
+    ./prove-sync-examples
+
+The first refuses an example carrying a field its table does not declare, one
+omitting a field its table requires, one whose `type` is not the shape it sits
+under, a shape with no example or with two, an example that is not JSON, a table
+row that does not declare four cells or answers requiredness with a sentence, and
+a requirement list with a hole in it. It fails closed on a document that is not
+there, one holding neither shape heading, one holding a heading and no shape, one
+with no requirement list, and a fenced example that is opened and never closed,
+because a scanner reading an empty document as a clean one turns a deleted body
+into a green tick, and everything below an unclosed fence is read as part of the
+example above it.
+
+Only the top level keys of an example are judged. A field whose value has a shape
+of its own is judged where that shape has a section, which is why the shapes that
+travel inside a message have sections rather than being described in the prose of
+the messages carrying them.
+
+What it cannot judge is whether a table describes what an instance would really
+send. Nothing in this tree speaks the protocol yet, so a green run says the
+document agrees with itself and nothing more; #74 is where a client is driven
+through the whole of it against a stubbed server. `./prove-sync-examples` is the
+evidence that each refusal above bites, against documents it writes rather than
+against this project's own, and every leg expecting a refusal is followed by the
+one-change neighbour that has to pass.
+
 The tree it builds:
 
     git ls-tree --name-only HEAD
@@ -730,12 +762,14 @@ The tree it builds:
     prove-quality
     prove-sealed
     prove-secret-scan
+    prove-sync-examples
     prove-workflow-scan
     regenerate
     rust-toolchain.toml
     secret-scan
     secrets-allowed
     server
+    sync-example-scan.js
     test
     test-needs-a-database
     test-scan
