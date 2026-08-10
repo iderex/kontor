@@ -583,13 +583,17 @@ by its one-change neighbour. The near miss worth the most is a critical finding,
 whose severity sorts before the line as text and after it as a number, so a
 check written the easy way would pass exactly the findings it exists for.
 
-Two things it does not reach, said plainly because a green run says nothing
-about either. Whether the scanner found everything is not decided by any of it:
-a report with no results is a statement about the queries that ran rather than
-about the tree, and no fixture in this repository proves that a given query
-still catches what it is named for. And there is no mobile toolchain here, so
-none of it is scanned; #75 is where that core arrives and is the issue holding
-the gap.
+Three things it does not reach, said plainly because a green run says nothing
+about any of them. Whether the scanner found everything is not decided by any of
+it: a report with no results is a statement about the queries that ran rather
+than about the tree, and no fixture in this repository proves that a given query
+still catches what it is named for. The server extraction is partial, because
+the extractor reads the source without building it, which is the only mode that
+language offers, so a file whose dependencies or macros it cannot resolve is
+analysed with less than it needed; each analysis prints how many of its files
+that was, and nothing refuses a rise in that number. And there is no mobile
+toolchain here, so none of it is scanned; #75 is where that core arrives and is
+the issue holding the gap.
 
 The documentation is read by four rules of its own, two about what a document
 points at, one about how a decision record is shaped and one about the words a

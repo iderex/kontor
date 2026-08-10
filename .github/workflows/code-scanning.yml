@@ -36,6 +36,17 @@
 # out. #75 is where the shared mobile core arrives and is the issue that holds
 # the gap: adding a core without adding it here would leave this file reporting
 # on two thirds of the tree under a name that says otherwise.
+#
+# AND THE SERVER EXTRACTION IS PARTIAL RATHER THAN COMPLETE. The extractor reads
+# the source without building it, which is the only mode the server language
+# offers, so a file whose dependencies or macros it cannot resolve is extracted
+# with errors and is analysed with less than it needed. Those files are in the
+# database and a query over them answers from incomplete information, so a run
+# with no result is quieter than it looks. How many there are is printed in the
+# summary of each analysis rather than written here, because a count in a
+# comment drifts against the tree, and nothing in this workflow refuses a rise
+# in it: refusing one today would refuse the tree for what it already is. #109
+# is where that half is recorded.
 name: code-scanning
 
 on:
