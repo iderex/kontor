@@ -415,9 +415,43 @@ shape a reach is written with, so a rule reading the comments would refuse the
 file that explains the rule; a reach hidden in a string literal in library code
 is what that costs.
 
-Both are the server's. The client workspace has no tests and no runner, and #63
-is where its half belongs; a client leg that ran nothing and reported green
-would be worse than this sentence.
+All three are the server's. The client half of the rule is two commands of its
+own, and the second is the evidence:
+
+    client/test-scan
+    client/prove-test-scan
+
+The first carries two rules over the client workspace. A tracked file named as a
+test that the runner is not given is refused, because the runner is given one
+pattern and a test outside it never runs, and a test that never runs passes
+forever while being counted. And a test that reaches an address or drives a real
+browser is refused, because this suite runs inside the test process. It reads
+the bytes as written, comments and string literals included, which is the trade
+`./test-scan` makes over a test target and it is made here for the same reason.
+
+What the client suite is, in full: the runner node ships, given the pattern in
+the `test` script of `client/package.json`. No dependency and no compiler, since
+node strips the types itself, and nothing was added to the workspace but that
+line. What that buys is a suite with no apparatus to maintain; what it costs is
+that JSX is not stripped, so a component test cannot be written as `.tsx` until
+somebody argues for a means, and the first rule refuses one rather than letting
+it sit unrun.
+
+Three things it is not, said plainly because a green run says nothing about any
+of them. There is no rendering environment, which a component test needs and
+which is a dependency nobody has argued for yet. There is no command for a test
+that needs a real browser, which is why such a test is refused rather than sent
+somewhere. And the workspace holds no test at all today, which is what the
+scan's own count says: the runner exits green when it is given nothing, so a
+client leg reporting only an exit code would say the same thing on a workspace
+with tests and on one without. #63 holds all three.
+
+`./prove-test-scan` under `client/` is what says any of it refuses anything,
+against throwaway repositories it builds rather than against this tree. Its last
+group is not about the scan: it runs the shipped `test` script against a fixture
+the scan has already judged, which is what binds the two statements of the
+pattern, and it carries the runner's own bound by proving that a run given
+nothing reports zero and passes.
 
 `./coverage` runs the same suite under instrumentation and refuses below a
 floor. THE FLOOR IS A MEASUREMENT AND NOT A TARGET. It is 80% of lines and 75%
@@ -878,16 +912,19 @@ the suite is left running with nothing outside the machine reached:
 
     ./test --marked
 
-Four things carry that rule now, and they carry different halves of it.
+Several things carry that rule now, and they carry different halves of it.
 `./test-scan` refuses an unmarked test target whose source reaches for one of
 the four, before anything is compiled, and refuses a test inside a crate's
 `src/` that reaches for one at all, since that one can carry no marking.
 `./test --marked` refuses a marked target that does not say why it is marked, so
 the register a reader checks the marking against has no entry they cannot check.
+`client/test-scan` carries the same rule on the other layer, where there is no
+marking to carry an exception and so no reach is allowed at all.
 `./test-sealed` runs the suite where none of the three the environment can
-supply is there to reach. `./prove-headless` and
-`./prove-sealed` are what say each of those still refuses what it names. The
-section above describes all five and is where the detail is; this is the rule in
+supply is there to reach, and since `./test` runs both layers, the client half
+runs inside that seal too. `./prove-headless`, `./prove-sealed` and
+`client/prove-test-scan` are what say each of those still refuses what it names.
+The section above describes them and is where the detail is; this is the rule in
 one sentence and the command that prints it.
 
 This passage said the opposite until this commit: that nothing enforced the rule

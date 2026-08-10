@@ -1,11 +1,14 @@
-# The two suites and the coverage floor.
+# The suites and the coverage floor.
 #
 # Each job runs a script from the tree instead of holding the rule in a run:
 # block, so a contributor can ask the same question before pushing and get the
 # same answer. docs/layout.md is where that is argued.
 #
-# Three jobs rather than one, because a red tick should name one thing: the
-# suite that needs nothing, the suite that needs a database, and the floor.
+# A job per question rather than one job, because a red tick should name one
+# thing. How many there are is not written here: the count said three long
+# after it was three, which is the drift the enumeration rule is about, and it
+# is printed instead by the commands CONTRIBUTING.md gives for reading the check
+# names off a commit.
 #
 # The toolchain version appears nowhere here. rustup applies
 # /rust-toolchain.toml inside the checkout, which is also what installs the
@@ -54,6 +57,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The file, not a version. The suite's client half runs on node's own
+          # test runner, so the runner that decides whether this job is green
+          # has to be the one .nvmrc pins rather than whatever the image
+          # happens to carry.
+          node-version-file: .nvmrc
 
       - name: Run the unit suite
         # No database service on this job, and that is the point rather than an
@@ -167,6 +178,47 @@ jobs:
         # and reads the exit code, so a reach removed from the register reddens
         # the leg that depended on it.
         run: ./prove-headless
+
+  client-boundary:
+    name: Reject a client test that reaches past the test process
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject a client test that reaches past the test process
+        # The rule lives in the script, which ./test also runs before it hands
+        # anything to the runner, so a contributor sees the same refusal before
+        # pushing. It reads tracked files through git and needs neither
+        # toolchain installed, which is why this job checks out and runs.
+        #
+        # The job name says less than the script refuses rather than more: the
+        # first of its two rules is about a test file the runner is never given,
+        # which never runs and so never fails.
+        run: client/test-scan
+
+  client-boundary-proof:
+    name: Prove the client test boundary bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # Each leg builds a throwaway repository, runs the shipped scan or the
+        # shipped test command against it and reads what came back, so a shape
+        # taken out of the register reddens the leg that depended on it and a
+        # pattern that moved in one of the two places reddens the leg that binds
+        # them.
+        run: client/prove-test-scan
 
   needs-a-database:
     name: Run the suite that needs a database

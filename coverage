@@ -32,9 +32,11 @@
 # fixture crate whose entire purpose is to be refused by ./lint, nothing tests
 # it, and counting it would let somebody raise the number by deleting a fixture.
 #
-# The client is not measured at all. It has no tests and no runner; #63 makes
-# the web client testable and is where its floor belongs. A coverage number over
-# a workspace with no tests would be a number about nothing.
+# The client is not measured at all. It has a runner and no tests, and #63 is
+# where its floor belongs. A coverage number over a workspace holding no test
+# would be a number about nothing, and instrumenting the runner before there is
+# anything to instrument would buy that number rather than the thing it stands
+# for.
 #
 # POSIX sh, matching ./build, running the toolchain's own verb through the one
 # tool that reads the compiler's own instrumentation rather than a parallel
