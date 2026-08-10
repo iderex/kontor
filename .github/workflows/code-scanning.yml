@@ -1,0 +1,219 @@
+# Code scanning over every language this repository holds, and the line that
+# decides which of its findings stops a merge.
+#
+# The lint gate refuses shapes that are wrong in one file. This reads the
+# program instead: it follows a value from where it enters to where it is used,
+# so it can say that a path arriving from outside reaches the filesystem, which
+# is not a question about any one line. That is a different lens rather than a
+# stricter setting of the same one, and #109 is where it was asked for.
+#
+# THREE JOBS BECAUSE THERE ARE THREE LANGUAGES, and each one is named in the
+# configuration rather than detected. A scanner that decides for itself what a
+# repository is written in reports on what it recognised, and the day it stops
+# recognising one of them the run stays green under a name that promises
+# coverage. The third language is the workflow files themselves, which are code
+# holding a token, and they are scanned here as source rather than left to the
+# audit that reads them for a different question.
+#
+# Every job carries a name written out rather than derived from a matrix value,
+# because a required check is matched by that string. docs/required-checks.md is
+# where that matters.
+#
+# WHAT THE ANALYSIS DOES NOT DO IS REFUSE. It uploads what it found and exits
+# successfully whether it found anything or not, so on its own it is a report.
+# `finding-scan.js` is the refusal, it runs in every job against what that job
+# wrote, and `prove-finding-scan` is the evidence that it bites. The query set,
+# and the reason nothing is excluded from it, live in the configuration file
+# every job below is pointed at by name on its `config-file` line. That path is
+# not written into this comment because it begins with a dot, and the rule that
+# refuses a comment naming a file this tree does not hold cannot resolve one
+# that does: its pattern starts a reference at a letter or a digit, so the
+# leading dot is dropped and what is left resolves to nothing. #156 is where the
+# bounds of that rule are recorded.
+#
+# WHAT IS NOT COVERED. There is no mobile toolchain in this tree, so none of it
+# is scanned, and that is the absence of a subject rather than a language left
+# out. #75 is where the shared mobile core arrives and is the issue that holds
+# the gap: adding a core without adding it here would leave this file reporting
+# on two thirds of the tree under a name that says otherwise.
+name: code-scanning
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # text-determinism.yml settled on and the reason is written there: a commit
+  # that is both pushed and in a pull request is judged once under each name,
+  # and a name carried by two runs of two events cannot be required of a merge
+  # until docs/required-checks.md says how the platform resolves the duplicate.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Nothing at the workflow level. Each job below takes read on the contents to
+# check the tree out and write on the security events to put what it found in
+# the surface an operator reads.
+permissions: {}
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict. Nothing here publishes, so cancelling one is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Reject a finding in the server language at or above the stated severity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The refusal below is Node, and the version it runs under is the one
+          # this tree pins rather than whatever the runner image carries.
+          node-version-file: .nvmrc
+
+      - name: Read the server source
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: rust
+          # The extractor reads the source rather than a compiled artefact, so
+          # nothing here builds the workspace. build.yml is where the build is.
+          build-mode: none
+          config-file: ./.github/codeql/config.yml
+
+      - name: Run the queries
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:rust
+          output: sarif
+          # Uploaded by the step below rather than here, so that a token with no
+          # write on the security events skips the upload and still meets the
+          # refusal. zizmor.yml is where that arrangement was first argued.
+          upload: false
+
+      - name: Put the results in the security surface
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: sarif
+          category: /language:rust
+
+      - name: Reject a finding at or above the stated severity
+        # The pattern rather than a name, so a report written under a name this
+        # file did not expect is refused as an absent one rather than passed
+        # over as a clean run.
+        run: ./finding-scan.js sarif/*.sarif
+
+  client:
+    name: Reject a finding in the client language at or above the stated severity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Read the client source
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          # One language rather than two. The extractor reads TypeScript and
+          # JavaScript as one thing, and asking for them separately would report
+          # the same file twice.
+          languages: javascript-typescript
+          config-file: ./.github/codeql/config.yml
+
+      - name: Run the queries
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:javascript-typescript
+          output: sarif
+          upload: false
+
+      - name: Put the results in the security surface
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: sarif
+          category: /language:javascript-typescript
+
+      - name: Reject a finding at or above the stated severity
+        run: ./finding-scan.js sarif/*.sarif
+
+  workflows:
+    name: Reject a finding in the workflow files at or above the stated severity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Read the workflow files
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: actions
+          config-file: ./.github/codeql/config.yml
+
+      - name: Run the queries
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:actions
+          output: sarif
+          upload: false
+
+      - name: Put the results in the security surface
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: sarif
+          category: /language:actions
+
+      - name: Reject a finding at or above the stated severity
+        run: ./finding-scan.js sarif/*.sarif
+
+  proof:
+    name: Prove the finding gate bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg writes a report, runs the shipped scanner against it
+        # and reads both the exit code and the reason, so a line moved where it
+        # lives reddens the leg that depended on it.
+        run: ./prove-finding-scan

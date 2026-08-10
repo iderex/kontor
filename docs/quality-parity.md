@@ -57,9 +57,13 @@ courtesy.
 
 `CodeQL` and `Analyze (csharp)`. These two contexts are one mechanism in the
 target, the second being the language specific job the first schedules. Replaced
-here by the code scanning gate of #109, which is two jobs because there are two
-languages. So two contexts there become two here for a different reason, and
-counting them as a match on the number would hide that.
+here by the code scanning gate of #109, which is three jobs because there are
+three languages: the two toolchains, and the workflow files, which are code
+holding a token and are read as source rather than left to the audit that reads
+them for another question. So two contexts there become three here for a
+different reason, and counting them as a match on the number would hide that.
+This passage said two until the gate landed, on the count of toolchains, and the
+third language was in the issue's conditions before it was in this sentence.
 
 `DCO sign-off`. Matched, and already running under exactly that name, which is
 readable in the tree:
@@ -115,7 +119,7 @@ are sign off, the Unicode guard, the workflow audit and dependency review. Two
 are matched by a named counterpart that does not exist yet, which are the bill of
 materials and the greppable invariants. Two become two jobs each because of the
 second toolchain, which are the build and the formatter. Two are one mechanism
-appearing as two contexts and are replaced by the two language jobs of #109. Two
+appearing as two contexts and are replaced by the three language jobs of #109. Two
 are replaced by counterparts for a product of this shape, which are the floor
 build and the image build. And one had no delivering issue at all until this map
 opened #132. That is four, two, two, two, two and one, which is thirteen.
