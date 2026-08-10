@@ -17,10 +17,15 @@
 # widens that marking to the four things a test in this project can need, and
 # makes an unmarked test that reaches for one of them fail at collection.
 #
-# This is the server suite and it is the whole suite that exists. The client
-# workspace has no tests and no runner: #63 makes the web client testable and is
-# where its half of this belongs. Saying so here is cheaper than a client leg
-# that runs nothing and reports green.
+# BOTH LAYERS RUN HERE, and the second one holds no test yet. The client half is
+# the runner node ships plus client/test-scan, which refuses a test that reaches
+# an address or a browser and prints how many test files it judged. That count
+# is what stops this reading as coverage: the runner exits green when it is
+# given nothing, so a client leg reporting only an exit code would say the same
+# thing on a workspace with tests and on one without. What is still missing is a
+# rendering environment for a component to be rendered into, which is a
+# dependency nobody has argued for, and a command for tests that need a real
+# browser. #63 holds both.
 #
 # --locked so the suite cannot be the thing that quietly updates a dependency,
 # which would make a green run and the resolution it ran against two different
@@ -154,7 +159,7 @@ process.stdin.on("data", (d) => (raw += d)).on("end", () => {
 
   // THE BOUND ON THAT NUMBER, printed with it rather than left to a document.
   process.stdout.write(
-    "test: counted in targets rather than in tests, because cargo says how many targets exist without building one and says nothing about how many tests are inside them. It is the server workspace only; the client has no suite, which is #63.\n",
+    "test: counted in targets rather than in tests, because cargo says how many targets exist without building one and says nothing about how many tests are inside them. It is the server workspace only; the client suite is counted by client/test-scan and none of it is in this number.\n",
   );
 });
 '
@@ -172,4 +177,19 @@ fi
 echo "test: the unit suite, with nothing outside this machine reached"
 cargo test --manifest-path server/Cargo.toml --workspace --locked "$@"
 
-echo "test: green. ./coverage is what says how much of the tree it touched."
+# The client half. Its scan runs first for the reason the server's does, and the
+# runner is reached through npm rather than by naming node's flags here, so the
+# command in this file and the one in client/package.json cannot come to differ.
+# That is what ./format already does with the formatter and it is the same
+# argument.
+command -v npm >/dev/null 2>&1 || {
+    echo "test: npm is not on the path, and the client half is run through it. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+client/test-scan
+
+echo "test: the client suite, in the test process, with no browser and no display"
+npm test --prefix client
+
+echo "test: green. ./coverage is what says how much of the server it touched, and nothing measures the client."

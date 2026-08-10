@@ -1,0 +1,224 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The client suite's boundary, shown to bite.
+#
+# A gate that has never refused anything is a claim rather than a control, and
+# the cheapest way for one to stop working is for it to keep passing. Every leg
+# here runs the shipped script or the shipped `test` command; none of them
+# restates a rule, so a rule loosened where it lives is loosened here too and
+# the leg that depended on it goes red.
+#
+# Run from anywhere:
+#
+#     client/prove-test-scan
+#
+# Every fixture is a throwaway repository this script builds, because both rules
+# read tracked files through git and because a tracked file carrying the thing
+# the scan refuses would redden the real run for the sake of proving that it
+# can.
+#
+# THE LAST GROUP IS NOT ABOUT THE SCAN. It runs the `test` script out of
+# client/package.json against a fixture the scan has already judged, which is
+# what says the two hold the same pattern: the scan judges a file the runner
+# never receives, or the runner receives a file the scan never judged, and one
+# of those legs goes red. The same group carries the runner's own bound, which
+# is that it reports zero tests and exits green when it is given nothing.
+#
+# The scan is run as a path rather than through `sh`, which is how ./test and
+# the workflow run it. A file the tree did not mark executable fails that way
+# and passes the other, and this project has lost jobs to exactly that.
+#
+# POSIX sh, matching ./build and client/prove-gates, because the legs are exit
+# codes from other programs and nothing here needs a language that can do more
+# than run one and read the number it returned.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+
+scan=$(pwd)/client/test-scan
+
+command -v node >/dev/null 2>&1 || {
+    echo "prove-test-scan: node is not on the path. CONTRIBUTING.md says what to install." >&2
+    exit 1
+}
+
+failed=0
+
+pass() {
+    echo "  ok    $1"
+}
+
+fail() {
+    echo "  FAIL  $1" >&2
+    failed=1
+}
+
+expect_green() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        pass "$what"
+    else
+        fail "$what (exit $?, and it was supposed to pass)"
+    fi
+}
+
+# A gate that cannot say no is what this script exists to catch, so the message
+# says which way round the leg was.
+expect_red() {
+    what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        fail "$what (it passed, and it was supposed to be refused)"
+    else
+        pass "$what"
+    fi
+}
+
+# One tracked file at one path, holding one line of a test, judged by the
+# shipped scan from inside the repository it was committed to.
+scan_case() {
+    what=$1
+    path=$2
+    line=$3
+    expectation=$4
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/$(dirname "$path")"
+    {
+        echo 'import { test } from "node:test";'
+        echo 'test("a case", () => {'
+        echo "  $line"
+        echo '});'
+    } > "$tmp/$path"
+    # core.autocrlf off, so the case is judged on the bytes written above
+    # whatever this machine's git is configured to do to them.
+    git -c init.defaultBranch=main init -q "$tmp"
+    git -C "$tmp" config core.autocrlf false
+    git -C "$tmp" add -A
+
+    if [ "$expectation" = red ]; then
+        expect_red "$what" sh -c "cd \"$tmp\" && \"$scan\""
+    else
+        expect_green "$what" sh -c "cd \"$tmp\" && \"$scan\""
+    fi
+
+    rm -rf "$tmp"
+}
+
+echo "prove-test-scan: where a test lives"
+
+scan_case "a test the runner is not given is refused" \
+    client/packages/app/src/stray.test.ts 'return;' red
+
+scan_case "the same test under the directory the runner is given is accepted" \
+    client/packages/app/tests/stray.test.ts 'return;' green
+
+# The near miss. A component test is the first thing somebody will write, and
+# .tsx is what they will name it, so the extension is the mistake to catch.
+scan_case "a test in the right place with an extension the runner does not take is refused" \
+    client/packages/app/tests/widget.test.tsx 'return;' red
+
+echo "prove-test-scan: the outward boundary"
+
+scan_case "a test that opens a connection is refused" \
+    client/packages/app/tests/reach.test.ts 'void fetch("http://127.0.0.1:8080/");' red
+
+scan_case "the same test with the reach taken out is accepted" \
+    client/packages/app/tests/reach.test.ts 'void String("http://127.0.0.1:8080/");' green
+
+# The one-character mistake somebody will actually make in the register: a word
+# that ends in the name of the shape and is not it.
+scan_case "a test calling something whose name merely ends in the shape is accepted" \
+    client/packages/app/tests/reach.test.ts 'void prefetch(records);' green
+
+scan_case "a test reaching the network through the runtime rather than the browser is refused" \
+    client/packages/app/tests/reach.test.ts 'const net = await import("node:net");' red
+
+scan_case "a test that drives a real browser is refused" \
+    client/packages/app/tests/browser.test.ts 'const { chromium } = await import("playwright");' red
+
+scan_case "the same test with the driver taken out is accepted" \
+    client/packages/app/tests/browser.test.ts 'const { chromium } = await import("./stub.js");' green
+
+echo "prove-test-scan: the runner, and that it is given what the scan judged"
+
+# The `test` script is read out of client/package.json rather than written here.
+# A pattern changed there and not in the scan reddens a leg below, which is the
+# whole reason this group exists.
+#
+# THE FIRST LEG READS WHAT THE RUN SAID AND NOT ONLY WHAT IT RETURNED. Given a
+# pattern that reaches nothing the runner exits green, so an exit code alone
+# cannot tell a suite that ran from one that found nothing to run, and that is
+# the exact failure a pattern which stopped matching produces.
+runner_case() {
+    what=$1
+    body=$2
+    expectation=$3
+    place=$4
+
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/$(dirname "$place")"
+    printf '%s\n' "$body" > "$tmp/$place"
+    node -e '
+const fs = require("node:fs");
+const shipped = JSON.parse(fs.readFileSync("client/package.json", "utf8"));
+fs.writeFileSync(process.argv[1], JSON.stringify({
+  name: "fixture",
+  private: true,
+  scripts: { test: shipped.scripts.test },
+}));
+' "$tmp/package.json"
+
+    rc=0
+    said=$(npm test --prefix "$tmp" 2>&1) || rc=$?
+
+    case "$expectation" in
+        ran)
+            if [ "$rc" -eq 0 ] && printf '%s' "$said" | grep -q 'pass 1$'; then
+                pass "$what"
+            else
+                fail "$what (exit $rc, and it was supposed to run one test and pass it)"
+            fi
+            ;;
+        red)
+            if [ "$rc" -eq 0 ]; then
+                fail "$what (it passed, and it was supposed to be refused)"
+            else
+                pass "$what"
+            fi
+            ;;
+        nothing)
+            if [ "$rc" -eq 0 ] && printf '%s' "$said" | grep -q 'tests 0$'; then
+                pass "$what"
+            else
+                fail "$what (exit $rc, and it was supposed to find nothing and say so)"
+            fi
+            ;;
+    esac
+
+    rm -rf "$tmp"
+}
+
+runner_case "the shipped test command runs a test at the path the scan judges" \
+    'import { test } from "node:test";
+test("a case", () => {});' ran packages/app/tests/case.test.ts
+
+runner_case "a failing test makes the shipped test command red" \
+    'import { test } from "node:test";
+import assert from "node:assert/strict";
+test("a case", () => { assert.equal(1, 2); });' red packages/app/tests/case.test.ts
+
+# THE RUNNER'S OWN BOUND, proved rather than described. Given nothing to run it
+# reports zero and exits green, so a client leg that only ran this command would
+# be green on a workspace with no tests in it and on one whose tests the pattern
+# stopped reaching. That is why client/test-scan prints the count it judged.
+runner_case "the shipped test command with no test file passes and reports nothing" \
+    'export const notATest = 1;' nothing packages/app/src/main.ts
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-test-scan: a leg above did not do what it says. The rule it belongs to is not proven." >&2
+    exit 1
+fi
+
+echo "prove-test-scan: every leg did what it says."

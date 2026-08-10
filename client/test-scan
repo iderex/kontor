@@ -1,0 +1,122 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The client suite runs inside the test process. A test that reaches outside it
+# is refused here, before the runner starts, rather than at an assertion.
+#
+# Run from the repository root:
+#
+#     client/test-scan
+#
+# It reads tracked files through git rather than the working tree, so build
+# output and fetched dependencies cannot be judged by accident and a file nobody
+# committed cannot introduce a verdict. That is client/escape-scan's rule and it
+# is here for the same reason.
+#
+# TWO RULES, AND THE FIRST ONE IS ABOUT WHERE A TEST LIVES. The runner is given
+# one pattern, in the `test` script of client/package.json, and a test file
+# outside it is never executed. A test that is never executed passes forever,
+# which is worse than no test at all, because the count in a report includes it.
+# So a tracked file whose name says it is a test and which that pattern does not
+# reach is refused, and the message names the directory and the extension it
+# needs.
+#
+# THE PATTERN IS WRITTEN IN TWO PLACES, here and in that script, and nothing in
+# either file reads the other. client/prove-test-scan closes that with a leg
+# rather than with a comment: one fixture holds one test, this script is asked
+# to judge it and the shipped `test` script is asked to run it, and a pattern
+# that moved in one place and not the other reddens that leg.
+#
+# WHY .tsx IS NOT IN THE PATTERN, said here because it is the first thing a
+# component test will hit. node strips types from TypeScript on its own, which
+# is what lets this suite exist with no compiler and no dependency, and it does
+# not strip JSX. A component written that way needs a means nobody has argued
+# for yet, and until somebody does, a file named .test.tsx is a test the runner
+# cannot run, which is what the first rule refuses.
+#
+# THE SECOND RULE IS THE BOUNDARY. A test in this suite may not reach an address
+# and may not drive a browser. The register below is what those look like in
+# this language. A test that genuinely needs a real browser belongs to a command
+# whose name says so, and #63 is where that command is asked for; the tree does
+# not have one, so today the rule refuses the reach rather than redirecting it.
+#
+# The register is a floor rather than a guarantee. It holds the shapes somebody
+# could plausibly write today, and a reach written another way passes.
+#
+# IT READS THE BYTES AS WRITTEN, comments and string literals included, which is
+# the same trade ./test-scan makes over a test target and it is made for the
+# same reason: a test is short, and an address written as a string is exactly
+# the case worth catching. A test whose comment names one of these shapes is
+# refused, and the repair is to say it in other words.
+#
+# POSIX sh, matching ./build and client/escape-scan: both rules are questions
+# about the names of tracked files and the text of their lines, and neither
+# needs a parse of the program or a dependency to ask.
+#
+# client/prove-test-scan is what shows this file bites, and it runs this file
+# rather than a copy of its rules.
+set -eu
+
+# The pattern the runner is given, as a git pathspec. `*` stops at a directory
+# separator here and `**` crosses one, which is what the runner's glob does too.
+suite=':(glob)client/packages/*/tests/**/*.test.ts'
+
+# Anything tracked under the client whose name says it is a test.
+named=':(glob)client/**/*.test.*'
+
+failed=0
+
+# THE FIRST RULE. Set subtraction rather than a second pattern, so there is one
+# statement of what the runner reaches and the refusal is everything else.
+run=$(git ls-files -- "$suite")
+all=$(git ls-files -- "$named")
+stranded=$(printf '%s\n' "$all" | grep -v '^$' | { grep -vxF "$run" || true; })
+
+if [ -n "$stranded" ]; then
+    printf '%s\n' "$stranded" >&2
+    echo "test-scan: each file above is named as a test and the runner is not given it, so it would never run. Put it under client/packages/<package>/tests/ and name it <something>.test.ts, or take it out." >&2
+    failed=1
+fi
+
+# THE SECOND RULE. One row at a time, so a refusal names which boundary was
+# crossed rather than only that one was.
+reaches() {
+    what=$1
+    repair=$2
+    pattern=$3
+
+    rc=0
+    hits=$(git grep -n -P "$pattern" -- "$suite") || rc=$?
+
+    case "$rc" in
+        1) return 0 ;;
+        0) ;;
+        *)
+            echo "test-scan: git grep exited $rc. Failing closed rather than reading a broken scanner as a clean tree." >&2
+            exit 1
+            ;;
+    esac
+
+    printf '%s\n' "$hits" >&2
+    echo "test-scan: each line above reaches $what. $repair" >&2
+    failed=1
+}
+
+reaches "an address" \
+    "This suite runs where there is nothing to reach, so a test that opens a connection fails on a machine with no network and passes on yours. Stub at the boundary instead." \
+    '\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|\bsendBeacon\b|node:(http|https|net|dgram|tls)|\bundici\b|\baxios\b'
+
+reaches "a real browser" \
+    "This suite runs in the test process with no browser and no display. A test that needs one belongs to a command whose name says so, which this tree does not have yet." \
+    '\bplaywright\b|\bpuppeteer\b|\bwebdriver\b|\bselenium\b|\bchromedriver\b'
+
+if [ "$failed" -ne 0 ]; then
+    exit 1
+fi
+
+count=$(printf '%s\n' "$run" | grep -c . || true)
+
+if [ "$count" -eq 0 ]; then
+    echo "test-scan: no test file under client/packages/*/tests/ yet, so this judged nothing. client/prove-test-scan is what says it refuses anything."
+else
+    echo "test-scan: $count client test file(s), none of them reaching an address or a browser. The register holds the shapes a reach is written with today rather than every shape."
+fi
