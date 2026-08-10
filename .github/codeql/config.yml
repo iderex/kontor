@@ -1,0 +1,31 @@
+# What the code scanning analysis reads and which queries it runs. The workflow
+# names the languages one job at a time; this file is what every one of those
+# jobs is pointed at, so the query set is one decision rather than three.
+#
+# THE QUERY SET IS STATED HERE AND NOTHING IS TAKEN OUT OF IT. `security-and-quality`
+# is the widest of the suites the scanner ships: it is the default set, plus the
+# security queries held back from the default for their false positive rate,
+# plus the maintainability queries. It is chosen rather than the default set
+# because a query held back for its noise is still a query worth reading in a
+# tree this size, and because the line that decides what stops a run is drawn on
+# the severity a rule carries rather than on which suite it came from. Where a
+# query is ever excluded, the exclusion goes here with the reason on the line
+# above it, in the shape the registers at the root of this repository already
+# use, and an exclusion with no reason is what a reviewer sends back.
+#
+# WHAT A QUERY FINDS AND WHAT STOPS A RUN ARE TWO DECISIONS. Everything the
+# suite reports is uploaded and readable in the security surface. What fails a
+# run is the part `finding-scan.js` decides, and the severity it draws the line
+# at is stated in that file rather than here, because the line is this project's
+# and the suite is the scanner's.
+name: kontor
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  # Generated JavaScript, committed so that the type surface it declares travels
+  # with the package. The TypeScript it is generated from is read by the same
+  # analysis, so scanning both would report one finding twice and report it a
+  # second time against a file nobody edits.
+  - client/packages/app/dist

@@ -1,0 +1,242 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The severity line, shown to bite.
+#
+#     prove-finding-scan
+#
+# Each leg writes a throwaway report, runs the shipped scanner against it and
+# reads both the exit code and the reason, so a leg named for one refusal cannot
+# be satisfied by a different one. No leg restates the rule, so a line moved
+# where it lives reddens the leg that depended on it rather than passing
+# quietly.
+#
+# Every red leg is followed by its one-change neighbour, which has to pass.
+# Without that pair a leg is also satisfied by a scanner that refuses every
+# report it is given, and the near misses here are the mistakes somebody will
+# actually make: a finding one tenth below the line, and a critical finding
+# whose severity sorts before the line as text and after it as a number.
+#
+# THE REPORTS ARE FIXTURE REPORTS AND NOTHING HERE PRODUCED ONE. Every byte is
+# written by this file, so a leg proves what the rule refuses rather than what a
+# scanner happened to find on the day it ran. The shapes are not fixture shapes:
+# a real report declares its queries in an extension the driver loaded rather
+# than in the driver, and a leg here holds each of the two.
+#
+# THE NUMBER IN EVERY FIXTURE IS A FIXTURE NUMBER except where the leg is about
+# the line itself, and those two legs name it: one sits exactly on it and one
+# sits one tenth below. That pair is what says where the line is, so moving the
+# line in the scanner reddens both rather than neither.
+#
+# The scanner is run as a path, which is how the workflow runs it. prove-headless
+# is where the pair showing why that matters lives, and this file does not
+# restate it.
+#
+# POSIX sh, matching the other proof scripts here and for the same reason: a leg
+# is an exit code and a line of text from another program, and nothing in that
+# needs a language that can do more than run one and read what it said. The
+# scanner it proves is Node for a reason its own header gives, and the two being
+# different languages is what the harness cares nothing about.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# A report holding one rule and one result. Everything a leg varies is an
+# argument, so a leg that changes nothing has to pass, and a leg that is red is
+# red for the one thing it changed.
+#
+#   $1  the file to write
+#   $2  the rule id the report declares
+#   $3  the rule id the result names, so a leg can make the two disagree
+#   $4  the security-severity the rule carries, or the word none for a rule that
+#       carries no such property at all
+#   $5  driver or extension, which is where the rule is declared
+report() {
+    into=$1
+    declares=$2
+    names=$3
+    severity=$4
+    where=$5
+
+    if [ "$severity" = none ]; then
+        rule="{\"id\": \"$declares\", \"properties\": {\"kind\": \"problem\"}}"
+    else
+        rule="{\"id\": \"$declares\", \"properties\": {\"security-severity\": \"$severity\"}}"
+    fi
+
+    if [ "$where" = driver ]; then
+        driver="\"driver\": {\"name\": \"fixture\", \"rules\": [$rule]}"
+        extensions='"extensions": []'
+    else
+        driver='"driver": {"name": "fixture", "rules": []}'
+        extensions="\"extensions\": [{\"name\": \"fixture-queries\", \"rules\": [$rule]}]"
+    fi
+
+    cat > "$into" <<REPORT
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {$driver, $extensions},
+      "results": [
+        {
+          "ruleId": "$names",
+          "message": {"text": "a fixture finding"},
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {"uri": "fixture/source"},
+                "region": {"startLine": 3}
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+REPORT
+}
+
+# A report a scanner writes when it found nothing: a run, an empty result list,
+# and the rules it would have used.
+clean() {
+    cat > "$1" <<'REPORT'
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "fixture", "rules": []}, "extensions": []},
+      "results": []
+    }
+  ]
+}
+REPORT
+}
+
+scan() {
+    set +e
+    output=$("$root/finding-scan.js" "$@" 2>&1)
+    code=$?
+    set -e
+}
+
+# A leg expecting a refusal reads the reason as well as the code, so a tree
+# refused for another reason cannot satisfy it.
+refuses() {
+    what=$1
+    because=$2
+    shift 2
+
+    scan "$@"
+
+    if [ "$code" -ne 1 ]; then
+        fail "$what (exit $code, wanted 1)"
+        return
+    fi
+
+    if ! printf '%s\n' "$output" | grep -qF "$because"; then
+        fail "$what (refused for another reason: $output)"
+        return
+    fi
+
+    pass "$what"
+}
+
+accepts() {
+    what=$1
+    shift
+
+    scan "$@"
+
+    if [ "$code" -ne 0 ]; then
+        fail "$what (exit $code: $output)"
+        return
+    fi
+
+    pass "$what"
+}
+
+echo "prove-finding-scan: the line through what a scanner reported"
+
+report "$tmp/on-the-line.sarif" fixture/one fixture/one 4.0 extension
+refuses 'a finding exactly on the stated line is refused' \
+    'fixture/one at severity 4 in fixture/source:3' \
+    "$tmp/on-the-line.sarif"
+
+clean "$tmp/nothing-found.sarif"
+accepts 'the same report with that result taken out is accepted' \
+    "$tmp/nothing-found.sarif"
+
+report "$tmp/below.sarif" fixture/one fixture/one 3.9 extension
+accepts 'a finding one tenth below the line is accepted' \
+    "$tmp/below.sarif"
+
+report "$tmp/critical.sarif" fixture/one fixture/one 10.0 extension
+refuses 'a critical finding is refused, so the comparison is on the number and not on the text' \
+    'fixture/one at severity 10 in fixture/source:3' \
+    "$tmp/critical.sarif"
+
+report "$tmp/from-the-driver.sarif" fixture/one fixture/one 9.1 driver
+refuses 'a rule declared by the driver rather than by an extension is resolved' \
+    'fixture/one at severity 9.1' \
+    "$tmp/from-the-driver.sarif"
+
+report "$tmp/quality.sarif" fixture/style fixture/style none extension
+accepts 'a rule carrying no security severity is reported rather than refused' \
+    "$tmp/quality.sarif"
+
+report "$tmp/unknown-rule.sarif" fixture/one fixture/other 9.1 extension
+refuses 'a result naming a rule the report does not describe is refused' \
+    'which the report does not describe' \
+    "$tmp/unknown-rule.sarif"
+
+report "$tmp/not-a-number.sarif" fixture/one fixture/one high extension
+refuses 'a severity that is not a number is refused rather than read as zero' \
+    'is not a number' \
+    "$tmp/not-a-number.sarif"
+
+cat > "$tmp/no-run.sarif" <<'REPORT'
+{"version": "2.1.0", "runs": []}
+REPORT
+refuses 'a report holding no run is refused, so an analysis that read nothing is not a clean tree' \
+    'holds no run' \
+    "$tmp/no-run.sarif"
+
+printf 'not json at all\n' > "$tmp/not-json.sarif"
+refuses 'bytes that are not JSON are refused rather than passed over' \
+    'is not JSON' \
+    "$tmp/not-json.sarif"
+
+refuses 'a report that is not there is refused, since the analysis writes one whether it found anything or not' \
+    'is not a file this can read' \
+    "$tmp/never-written.sarif"
+
+accepts 'two clean reports are accepted' \
+    "$tmp/nothing-found.sarif" "$tmp/below.sarif"
+
+refuses 'a finding in the second of two reports is refused, so every report named is read' \
+    'fixture/one at severity 10' \
+    "$tmp/nothing-found.sarif" "$tmp/critical.sarif"
+
+scan
+if [ "$code" -eq 2 ] && printf '%s\n' "$output" | grep -qF 'no report was named'; then
+    pass 'a run with no report named is refused rather than passing as a clean one'
+else
+    fail "a run with no report named is refused rather than passing as a clean one (exit $code: $output)"
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-finding-scan: at least one leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-finding-scan: every leg did what it says. What a scanner finds is not decided here; what is decided is which of its findings stops a run."

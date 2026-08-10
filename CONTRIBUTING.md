@@ -544,6 +544,57 @@ nothing runs anything against a floor version, which is the rest of #131: the
 pins agreeing with the record says the numbers agree, not that either suite was
 ever exercised against the oldest version an operator is told they may run.
 
+The lint gate refuses shapes that are wrong in one file. A scanner that follows
+a value from where it enters the program to where it is used answers a different
+question, and code scanning is where that one is asked. It runs in the workflow
+rather than here, because the analysis needs a database built over the whole
+source and that is minutes rather than seconds, but the part of it that refuses
+is a command like every other one:
+
+    ./finding-scan.js sarif/rust.sarif
+    ./prove-finding-scan
+
+One job per language, three of them, and each names its language in the
+configuration rather than leaving the scanner to work out what the repository is
+written in. The third is the workflow files, which are code holding a token, and
+they are read as source here rather than left to the audit that reads them for
+another question. The query set is stated in `.github/codeql/config.yml`,
+nothing is excluded from it, and the file says where an exclusion would go and
+what it would have to carry.
+
+An analysis uploads what it found and exits successfully whether it found
+anything or not, so on its own it reports rather than refuses.
+`./finding-scan.js` is the refusal. It reads the report the analysis wrote and fails the run on a
+result whose rule carries a security severity at or above the line that file
+states, which is 4.0, the bottom of the band the surface calls medium. A rule
+carrying no such number, which is what a maintainability query carries, is
+uploaded and counted and does not fail anything. Moving the line is a change to
+that file, argued in the issue that moves it.
+
+It fails closed on five shapes rather than reading any of them as a clean tree:
+a report that is not there, bytes that are not JSON, a report holding no run at
+all, a result naming a rule the report does not describe, and a severity that is
+not a number. The third is the one worth knowing about, since an analysis that
+read nothing writes exactly that.
+
+`./prove-finding-scan` is the evidence, against reports it writes rather than
+against anything a scanner produced here, every leg expecting a refusal followed
+by its one-change neighbour. The near miss worth the most is a critical finding,
+whose severity sorts before the line as text and after it as a number, so a
+check written the easy way would pass exactly the findings it exists for.
+
+Three things it does not reach, said plainly because a green run says nothing
+about any of them. Whether the scanner found everything is not decided by any of
+it: a report with no results is a statement about the queries that ran rather
+than about the tree, and no fixture in this repository proves that a given query
+still catches what it is named for. The server extraction is partial, because
+the extractor reads the source without building it, which is the only mode that
+language offers, so a file whose dependencies or macros it cannot resolve is
+analysed with less than it needed; each analysis prints how many of its files
+that was, and nothing refuses a rise in that number. And there is no mobile
+toolchain here, so none of it is scanned; #75 is where that core arrives and is
+the issue holding the gap.
+
 The documentation is read by four rules of its own, two about what a document
 points at, one about how a decision record is shaped and one about the words a
 document is written in:
@@ -656,6 +707,7 @@ The tree it builds:
     docs-scan
     docs
     documentation-words
+    finding-scan.js
     floor-scan
     format
     layout-scan
@@ -668,6 +720,7 @@ The tree it builds:
     prove-connector-guides
     prove-determinism
     prove-docs-scan
+    prove-finding-scan
     prove-floors
     prove-headless
     prove-layout
