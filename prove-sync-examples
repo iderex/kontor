@@ -1,0 +1,413 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# The rule over a protocol document's examples, shown to bite.
+#
+#     prove-sync-examples
+#
+# Every leg writes a throwaway document, runs the shipped scanner against it and
+# reads both the exit code and the reason, so a leg named for one refusal cannot
+# be satisfied by a different one. No leg restates a rule, so a rule loosened
+# where it lives reddens the leg that depended on it rather than passing.
+#
+# Every leg expecting a refusal is followed by its one-change neighbour, which
+# has to pass. Without that pair a leg is also satisfied by a scanner that
+# refuses every document it is given, and that is the scanner somebody writes by
+# accident on the first attempt.
+#
+# THE DOCUMENTS ARE FIXTURE DOCUMENTS AND NONE OF THEM IS THIS PROJECT'S. Every
+# byte is written below, so a leg proves what the rule refuses rather than what
+# docs/sync-protocol.md happened to say on the day it ran. The shape names are
+# fixture names for the same reason: a leg written against a real message would
+# go red the day that message is renamed, for a reason that is not the rule.
+#
+# THE NEAR MISSES ARE THE POINT OF THREE OF THE LEGS. A field the table declares
+# and does not require, absent from the example, has to pass, or the rule is
+# about every field rather than about the required ones. A key nested inside a
+# value, which the table cannot declare, has to pass, or the stated top level
+# bound is not the bound. And a shape whose example carries the right fields
+# under a type naming a different shape has to be refused, because that is the
+# copy and paste somebody makes when they add a message by starting from the one
+# above it.
+#
+# The scanner is run as a path, which is how the workflow runs it, and
+# prove-headless is where the pair showing why that matters lives.
+#
+# POSIX sh, matching the other proof scripts here and for the same reason: a leg
+# is an exit code and a line of text out of another program. The scanner it
+# proves is Node for the reason its own header gives, and the harness cares
+# nothing about the two being different languages.
+set -eu
+
+cd "$(CDPATH= cd "$(dirname "$0")" && pwd)"
+
+root=$(pwd)
+failed=0
+
+pass() { echo "  ok    $1"; }
+fail() { echo "  FAIL  $1" >&2; failed=1; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# The document every leg starts from. Each part is a variable, so a leg changes
+# one of them and nothing else, and a leg that changes none has to pass.
+reset() {
+    messages='## Message shapes'
+    inner='## The shapes inside a message'
+    heading='## The requirements'
+
+    message_shape='### `ping`'
+    message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| `session` | string | yes | The session this belongs to. |
+| `note` | string | no | Something a sender may leave out. |'
+    message_example='{
+  "type": "ping",
+  "session": "s:1"
+}'
+
+    inner_shape='### `stamp`'
+    inner_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `at` | string | yes | When it happened. |'
+    inner_example='{
+  "at": "2026-08-09T14:02:11Z"
+}'
+
+    requirements='R1. A fixture requirement.
+
+R2. A second fixture requirement.'
+}
+
+write() {
+    cat > "$1" <<DOCUMENT
+# A fixture protocol document
+
+Prose above the shapes, so the scanner has something to walk past.
+
+$messages
+
+$message_shape
+
+$message_table
+
+\`\`\`json
+$message_example
+\`\`\`
+
+$inner
+
+$inner_shape
+
+$inner_table
+
+\`\`\`json
+$inner_example
+\`\`\`
+
+$heading
+
+$requirements
+DOCUMENT
+}
+
+scan() {
+    set +e
+    output=$("$root/sync-example-scan.js" "$@" 2>&1)
+    code=$?
+    set -e
+}
+
+# A leg expecting a refusal reads the reason as well as the code, so a document
+# refused for another reason cannot satisfy it.
+refuses() {
+    what=$1
+    because=$2
+    wanted=$3
+    shift 3
+
+    scan "$@"
+
+    if [ "$code" -ne "$wanted" ]; then
+        fail "$what (exit $code, wanted $wanted)"
+        return
+    fi
+
+    if ! printf '%s\n' "$output" | grep -qF "$because"; then
+        fail "$what (refused for another reason: $output)"
+        return
+    fi
+
+    pass "$what"
+}
+
+accepts() {
+    what=$1
+    shift
+
+    scan "$@"
+
+    if [ "$code" -ne 0 ]; then
+        fail "$what (exit $code: $output)"
+        return
+    fi
+
+    pass "$what"
+}
+
+echo "prove-sync-examples: an example against the table beside it"
+
+reset
+write "$tmp/whole.md"
+accepts 'a document whose examples carry what their tables declare passes' "$tmp/whole.md"
+
+reset
+message_example='{
+  "type": "ping",
+  "session": "s:1",
+  "extra": "a field no table declares"
+}'
+write "$tmp/undeclared.md"
+refuses 'an example carrying a field its table does not declare is refused' \
+    'field-not-declared' 1 "$tmp/undeclared.md"
+
+reset
+write "$tmp/undeclared-neighbour.md"
+accepts 'the same example without that field passes' "$tmp/undeclared-neighbour.md"
+
+reset
+message_example='{
+  "type": "ping"
+}'
+write "$tmp/absent.md"
+refuses 'an example omitting a field its table requires is refused' \
+    'required-field-absent' 1 "$tmp/absent.md"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| `session` | string | no | The session this belongs to. |
+| `note` | string | no | Something a sender may leave out. |'
+message_example='{
+  "type": "ping"
+}'
+write "$tmp/absent-neighbour.md"
+accepts 'the same example passes once its table stops requiring the field' "$tmp/absent-neighbour.md"
+
+echo "prove-sync-examples: the type, which is what a client routes on"
+
+reset
+message_example='{
+  "type": "pong",
+  "session": "s:1"
+}'
+write "$tmp/wrong-type.md"
+refuses 'an example whose type names a different shape is refused' \
+    'type-does-not-name-the-shape' 1 "$tmp/wrong-type.md"
+
+reset
+write "$tmp/wrong-type-neighbour.md"
+accepts 'the same example naming its own shape passes' "$tmp/wrong-type-neighbour.md"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `session` | string | yes | The session this belongs to. |'
+message_example='{
+  "session": "s:1"
+}'
+write "$tmp/no-type.md"
+refuses 'a message shape declaring no type is refused' \
+    'message-without-a-type' 1 "$tmp/no-type.md"
+
+reset
+inner_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `stamp`. |
+| `at` | string | yes | When it happened. |'
+inner_example='{
+  "type": "stamp",
+  "at": "2026-08-09T14:02:11Z"
+}'
+write "$tmp/inner-type.md"
+refuses 'a shape that never travels alone declaring a type is refused' \
+    'inner-shape-with-a-type' 1 "$tmp/inner-type.md"
+
+reset
+write "$tmp/inner-type-neighbour.md"
+accepts 'the same inner shape without a type passes' "$tmp/inner-type-neighbour.md"
+
+echo "prove-sync-examples: a shape with no example, and a shape with two"
+
+reset
+write "$tmp/base.md"
+sed '/^```json$/,/^```$/d' "$tmp/base.md" > "$tmp/no-example.md"
+refuses 'a shape carrying no example is refused' \
+    'shape-without-an-example' 1 "$tmp/no-example.md"
+
+reset
+message_example='{
+  "type": "ping",
+  "session": "s:1"
+}
+```
+
+```json
+{
+  "type": "ping",
+  "session": "s:2"
+}'
+write "$tmp/two-examples.md"
+refuses 'a shape carrying two examples is refused' \
+    'shape-with-two-examples' 1 "$tmp/two-examples.md"
+
+reset
+message_example='{
+  "type": "ping",
+  "session": s:1
+}'
+write "$tmp/not-json.md"
+refuses 'an example that is not JSON is refused' \
+    'example-not-json' 1 "$tmp/not-json.md"
+
+reset
+message_example='["ping"]'
+write "$tmp/not-an-object.md"
+refuses 'an example that is not an object is refused' \
+    'example-not-an-object' 1 "$tmp/not-an-object.md"
+
+echo "prove-sync-examples: the table itself"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| `session` | string | yes |
+| `note` | string | no | Something a sender may leave out. |'
+write "$tmp/short-row.md"
+refuses 'a table row that does not declare four cells is refused' \
+    'row-is-not-a-field' 1 "$tmp/short-row.md"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| `session` | string | when there is one | The session this belongs to. |
+| `note` | string | no | Something a sender may leave out. |'
+write "$tmp/required-prose.md"
+refuses 'a table answering requiredness with a sentence is refused' \
+    'required-not-answered' 1 "$tmp/required-prose.md"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| session | string | yes | The session this belongs to. |
+| `note` | string | no | Something a sender may leave out. |'
+write "$tmp/unquoted-field.md"
+refuses 'a field name written without backticks is refused' \
+    'field-not-quoted' 1 "$tmp/unquoted-field.md"
+
+reset
+write "$tmp/table-neighbour.md"
+accepts 'the same table written the way the rule asks passes' "$tmp/table-neighbour.md"
+
+echo "prove-sync-examples: the requirement list a conformance suite reads"
+
+reset
+requirements='R1. A fixture requirement.
+
+R3. A second fixture requirement, filed under a number that leaves a hole.'
+write "$tmp/hole.md"
+refuses 'a requirement list with a hole in it is refused' \
+    'requirement-out-of-order' 1 "$tmp/hole.md"
+
+reset
+write "$tmp/dense.md"
+accepts 'the same list numbered densely passes' "$tmp/dense.md"
+
+echo "prove-sync-examples: what it refuses rather than reading as a clean document"
+
+reset
+refuses 'a document that is not there is refused' \
+    'is not a file this can read' 2 "$tmp/absent-document.md"
+
+reset
+refuses 'a run naming no document is refused' \
+    'one document, named' 2
+
+reset
+messages='## Something else entirely'
+inner='## And another thing'
+write "$tmp/no-headings.md"
+refuses 'a document holding neither shape heading is refused' \
+    'holds neither' 2 "$tmp/no-headings.md"
+
+reset
+message_shape='Not a heading at all.'
+inner_shape='Nor is this.'
+message_table=''
+inner_table=''
+message_example='{}'
+inner_example='{}'
+write "$tmp/no-shapes.md"
+refuses 'a shape heading with no shape under it is refused' \
+    'no shape under it' 2 "$tmp/no-shapes.md"
+
+reset
+heading='## Something that is not the requirement list'
+write "$tmp/no-requirements.md"
+refuses 'a document with no requirement list is refused' \
+    'holds no' 2 "$tmp/no-requirements.md"
+
+reset
+requirements='Prose where the requirements go, and no requirement in it.'
+write "$tmp/empty-requirements.md"
+refuses 'a requirement heading with nothing under it is refused' \
+    'no requirement under it' 2 "$tmp/empty-requirements.md"
+
+reset
+inner_example='{
+  "at": "2026-08-09T14:02:11Z"
+}
+```
+
+Prose where the example ended, so the fence the document writes next opens one
+that nothing after it closes.'
+write "$tmp/unclosed.md"
+refuses 'an example fence that is never closed is refused' \
+    'example-not-closed' 2 "$tmp/unclosed.md"
+
+echo "prove-sync-examples: the near miss the rule is deliberately not about"
+
+reset
+message_example='{
+  "type": "ping",
+  "session": "s:1",
+  "note": "present, and the table does not require it"
+}'
+write "$tmp/optional-present.md"
+accepts 'a declared field the table does not require is accepted either way' "$tmp/optional-present.md"
+
+reset
+message_table='| field | type | required | meaning |
+| --- | --- | --- | --- |
+| `type` | string | yes | The literal `ping`. |
+| `session` | string | yes | The session this belongs to. |
+| `note` | object | no | A value with a shape of its own. |'
+message_example='{
+  "type": "ping",
+  "session": "s:1",
+  "note": { "nested": "a key no table here declares" }
+}'
+write "$tmp/nested.md"
+accepts 'a key nested inside a value is not judged, which is the stated bound' "$tmp/nested.md"
+
+if [ "$failed" -ne 0 ]; then
+    echo "prove-sync-examples: at least one leg did not do what it says." >&2
+    exit 1
+fi
+
+echo "prove-sync-examples: every leg did what it says. That a document agrees with itself is what is proved here; whether it describes a protocol an instance would speak is not."

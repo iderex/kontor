@@ -1,0 +1,83 @@
+# One refusal over the protocol document, and the evidence that it bites.
+#
+# docs/sync-protocol.md is what a client is written against, including a client
+# somebody outside this repository writes, so it is read more carefully than
+# anything else here and it is copied from rather than described. An example
+# that disagrees with the table beside it is therefore not a documentation
+# defect that costs a reader a moment: it is a client built to a shape this
+# instance will refuse, found at run time by whoever wrote it.
+#
+# sync-example-scan.js is the refusal and prove-sync-examples is the evidence.
+# The scanner judges the bytes of the document and never what they mean, and its
+# own header says so at length: whether a table describes what an instance would
+# really send is what #74 builds a conformance suite for, and no reading of this
+# tree decides it while nothing here speaks the protocol.
+#
+# Each job runs a script from the tree rather than holding the rule in a run:
+# block, so a contributor can ask the same question before pushing and get the
+# same answer. docs/layout.md is where that is argued.
+name: sync protocol
+
+on:
+  # The pull request event, and the default branch on push, which is the shape
+  # every other gate here has: a commit in a pull request is judged once under
+  # each name, and the default branch is judged again when the merge lands.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. The first job reads the checkout and the second builds its fixture
+# documents under the runner's own temporary directory.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref so a new push does not queue behind an
+# obsolete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  examples:
+    name: Reject a protocol example that disagrees with its shape
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not leave the token in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The refusal is Node, and the version it runs under is the one this
+          # tree pins rather than whatever the runner image carries.
+          node-version-file: .nvmrc
+
+      - name: Reject a protocol example that disagrees with its shape
+        # Named rather than found by a pattern. A document renamed out from
+        # under this line is refused as an absent one rather than passed over
+        # as a tree with nothing to judge.
+        run: ./sync-example-scan.js docs/sync-protocol.md
+
+  proof:
+    name: Prove the protocol example rule bites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run every leg
+        # A gate that has never refused anything is a claim rather than a
+        # control. Each leg writes a document holding the case it is about, runs
+        # the shipped scanner against it, and reads the exit code and the
+        # reason, and every leg expecting a refusal is followed by the
+        # one-change neighbour that has to pass.
+        run: ./prove-sync-examples
