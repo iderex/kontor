@@ -1,9 +1,9 @@
 # The checks requested in front of the default branch
 
 Changing a repository's protection is an act performed by the maintainer on the
-repository, and nothing in this tree can perform it. What a plan can do is name
-the exact contexts with what each one costs, and then record the state that was
-read back afterwards. Everything below is a request on those terms.
+repository, and nothing in this tree can perform it, so what follows is a
+request. What a plan can do is name the exact contexts with what each one costs,
+and then record the state that was read back afterwards.
 
 Everything below is read from the repository rather than from the files in it.
 Where a name appears, the command that printed it is above it.
