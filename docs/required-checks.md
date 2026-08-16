@@ -1,9 +1,9 @@
 # The checks requested in front of the default branch
 
-This document is a request. Changing a repository's protection is an act
-performed by the maintainer on the repository, and nothing in this tree can
-perform it, so what a plan can do is name the exact contexts, say what each one
-costs, and record the state that was actually read back afterwards.
+Changing a repository's protection is an act performed by the maintainer on the
+repository, and nothing in this tree can perform it. What a plan can do is name
+the exact contexts with what each one costs, and then record the state that was
+read back afterwards. Everything below is a request on those terms.
 
 Everything below is read from the repository rather than from the files in it.
 Where a name appears, the command that printed it is above it.
@@ -39,9 +39,9 @@ repository does not use.
 
 ## The settings requested alongside the contexts
 
-Three of the four are already in force, and they are stated here with their
-reasons rather than left as output nobody argued with. A setting that is in
-force for a reason nobody wrote down is a setting the next person will remove.
+Three of the four are already in force, and each is stated below with the reason
+it is wanted. A setting that is in force for a reason nobody wrote down is a
+setting the next person will remove.
 
 A pull request is required, and it is wanted. It is the only moment in this
 repository where a change is a readable object with a body attached to it rather
