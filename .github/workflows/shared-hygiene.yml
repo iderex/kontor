@@ -1,0 +1,36 @@
+# The shared half of the hygiene rules, called rather than copied (#178).
+#
+# WHY THIS SITS BESIDE pr-hygiene.yml AND DOES NOT REPLACE IT. What the two have
+# in common is the shape of the body, and that half is now written once for the
+# fleet and called from here. What this board asks on top has no equivalent in
+# the shared check: pr-body-scan reads the pull request template and requires the
+# body to carry every heading it asks for, so a heading added to the template is
+# required from that commit rather than from the day somebody remembers to copy
+# it; and a second rule takes each number the body names to the tracker and
+# refuses it where it resolves to a pull request or to nothing. Neither of those
+# is in the shared check and neither is removed here. A local rule goes only once
+# the shared check is shown to cover it, one rule at a time.
+#
+# THE SUBJECT RULE IS OFF. This board does not write [#N] in its subject lines
+# yet: of the last 59 authored subjects, none carries the number in any form the
+# shared rule accepts, so the rule is called with false. Switching one rule off
+# says the board does not meet that rule. Not calling the check at all would say
+# nothing, and this way the log prints which rule was skipped instead of leaving
+# a reader to infer it from a rule that printed nothing.
+#
+# PINNED BY HASH, NOT BY BRANCH. A moving reference would let the called
+# repository change what executes here without anybody reviewing it, and the
+# action pin guard and zizmor both refuse one for that reason.
+name: Shared hygiene
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    uses: iderex/wache/.github/workflows/pr-hygiene.yml@9b311243c2d0d0ced7feb957a20bc178acce6a5d # v1.0.0
+    with:
+      subject_names_issue: false
