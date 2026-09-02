@@ -1,9 +1,9 @@
 # The checks requested in front of the default branch
 
-Changing a repository's protection is an act performed by the maintainer on the
-repository, and nothing in this tree can perform it, so what follows is a
-request. What a plan can do is name the exact contexts with what each one costs,
-and then record the state that was read back afterwards.
+Changing a repository's protection is an act I perform on the repository, and
+nothing in this tree can perform it, so what follows is a request. What a plan
+can do is name the exact contexts with what each one costs, and then record the
+state that was read back afterwards.
 
 Everything below is read from the repository rather than from the files in it.
 Where a name appears, the command that printed it is above it.
@@ -467,10 +467,10 @@ and a rename silently stops requiring it.
 The issue that added the check states the name and links the run that produced
 it, so the request to add it to the set carries its own evidence.
 
-The maintainer adds the context to the `required_status_checks` rule of the
-`gate` ruleset, and the read-back at the top of this document is run again and
-recorded, because a request that was made and a request that was applied leave
-different output and only one of them is a control.
+I add the context to the `required_status_checks` rule of the `gate` ruleset,
+and the read-back at the top of this document is run again and recorded,
+because a request that was made and a request that was applied leave different
+output and only one of them is a control.
 
 ## What has not happened
 

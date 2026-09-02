@@ -94,12 +94,12 @@ So contribution is a certification rather than an assignment. A contributor
 keeps the copyright in what they wrote, and it is licensed inbound under the
 same licence this project ships under.
 
-That is what is in force. Whether it stays the mechanism is an open question the
-maintainer has not answered, and it is entry 1 of #129 rather than something
-this note decides. What follows from the current answer is worth stating plainly
-because it is the part people miss: with no assignment, changing this project's
-licence later would need the agreement of everybody who has contributed by then,
-and that gets harder with every merge.
+That is what is in force. Whether it stays the mechanism is an open question I
+have not answered, and it is entry 1 of #129 rather than something this note
+decides. What follows from the current answer is worth stating plainly because
+it is the part people miss: with no assignment, changing this project's licence
+later would need the agreement of everybody who has contributed by then, and
+that gets harder with every merge.
 
 ## What this note does not cover
 

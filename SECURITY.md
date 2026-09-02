@@ -17,11 +17,11 @@ this sentence:
     gh api repos/iderex/kontor/private-vulnerability-reporting --jq .enabled
     true
 
-A report there is visible to the maintainer and to whoever the reporter adds,
-and it carries a draft advisory, so the fix and the publication happen in the
-same place as the report. There is no address to write to instead, and that is
-deliberate: an address is a second route with no advisory attached to it and no
-record that a report arrived.
+A report there is visible to me and to whoever the reporter adds, and it
+carries a draft advisory, so the fix and the publication happen in the same
+place as the report. There is no address to write to instead, and that is
+deliberate: an address is a second route with no advisory attached to it and
+no record that a report arrived.
 
 Do not open a public issue for something you believe is exploitable. The
 tracker is public, and an issue is the disclosure rather than the report of
