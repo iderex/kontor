@@ -853,8 +853,8 @@ duplicate.
 ## No work without an issue
 
 Every change starts as an issue and lands as a pull request. Pushing to the
-default branch is refused, including for the maintainer, and the refusal is a
-property of the repository rather than a habit:
+default branch is refused, including for me, and the refusal is a property of
+the repository rather than a habit:
 
     gh api repos/iderex/kontor/rulesets --jq '.[] | select(.name == "gate") | .id'
     20486686

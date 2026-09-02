@@ -180,7 +180,7 @@ restored is a claim rather than a backup.
 Nothing here is a merge condition today. The empty output at the top of this
 document is the whole of the current state, and #108 is the separate request that
 the branch protection actually change, since changing a repository's protection
-is a maintainer action rather than something a plan performs.
+is an act I perform on the repository rather than something a plan performs.
 
 The rule proposed for the split, so that it can be applied to a check nobody has
 written yet rather than argued case by case.

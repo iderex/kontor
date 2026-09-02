@@ -69,8 +69,8 @@ None of the three is excluded, so the choice is on the merits.
 What it costs, stated rather than glossed. Two interface layers to build and
 maintain. A shared core whose debugging story spans two toolchains, which is a
 real tax on the day a bug is in neither half cleanly. And a first release that
-leaves half the potential users waiting, which is the cost the maintainer
-decision below actually spends.
+leaves half the potential users waiting, which is the cost the decision below,
+which is mine rather than the plan's, actually spends.
 
 ## The alternative considered
 
@@ -128,11 +128,11 @@ record depends on.
 
 Which platform ships first.
 
-That is a maintainer decision rather than a plan decision, because it depends on
-who the intended operators are and on what the maintainer intends to do about
-store distribution, and both of those are choices about the project rather than
-consequences of the engineering. Store distribution in particular carries an
-obligation attached to a person rather than to the project.
+That is mine to decide rather than a plan decision, because it depends on who
+the intended operators are and on what I intend to do about store distribution,
+and both of those are choices about the project rather than consequences of the
+engineering. Store distribution in particular carries an obligation attached
+to a person rather than to the project.
 
 It is recorded as an entry in #129 and it is not answered here, in either
 direction, deliberately. Nothing in this record assumes an answer: the core, the
