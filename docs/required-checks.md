@@ -17,16 +17,21 @@ Where a name appears, the command that printed it is above it.
       --jq '{enforcement, bypass: .bypass_actors, required: [.rules[].type],
              checks: [.rules[] | select(.type=="required_status_checks")
                               | .parameters.required_status_checks[]?.context]}'
-    {"bypass":[],"checks":[],"enforcement":"active","required":["deletion","non_fast_forward","pull_request"]}
+    {"bypass":[],"checks":[],"enforcement":"active","required":["deletion","non_fast_forward","pull_request","required_signatures"]}
 
     gh api repos/iderex/kontor/branches/main/protection
     {"message":"Branch not protected", ... ,"status":"404"}
 
-Three things follow from that output and each matters to what is requested
+Four things follow from that output and each matters to what is requested
 below.
 
 There is one ruleset, it is active, and it has no bypass actors, so what it
 requires it requires of everybody.
+
+It requires a verified signature. That entry was not in the output pasted above
+until the commit carrying this sentence, and the section below said signatures
+were not requested; both were true when they were written and neither was true
+when this was read. #187 is where that was found and what it does not settle.
 
 It requires no status check at all. The `checks` list is empty, which means
 every check named in the next section runs, reports, and is ignored by the merge
@@ -71,14 +76,47 @@ Deletion is refused, by the `deletion` rule. What it costs is close to nothing,
 since nobody has a use for deleting the default branch, and what it prevents is
 the one accident from which there is no local recovery.
 
-Signatures are not requested, and the reason is that this repository already
-made the other choice. The trailer of the Developer Certificate of Origin is
-what every commit here carries, `DCO sign-off` is what refuses one that does
-not, and the two mechanisms answer different questions: a signature says a key
-held the commit, and the trailer says the author asserts the right to contribute
-it. Requiring signatures as well would add a key management obligation to every
-contributor for an assurance this project has not argued it needs. If it is ever
-wanted, it is a decision record rather than a line added here.
+Signatures are in force, and this passage said they were not requested. It gave
+the reason that this repository had already made the other choice: the trailer
+of the Developer Certificate of Origin is what every commit here carries and
+`DCO sign-off` is what refuses one that does not. The half of that which
+survives is the distinction, because it is about what the two mechanisms mean
+rather than about which is switched on. A signature says a key held the commit;
+the trailer says the author asserts the right to contribute it. Neither answers
+the other's question, so having both is not a duplicate and dropping either
+would lose an answer rather than a formality.
+
+What is no longer true is the conclusion drawn from it. The rule is on the
+ruleset and is read back at the top of this document, so the key management
+obligation the passage weighed against is one a contributor here already has,
+and this is where they find that out rather than at a refused merge:
+
+    gh api repos/iderex/kontor/rulesets/20486686 \
+      --jq '[.rules[] | select(.type=="required_signatures")]'
+    [{"type":"required_signatures"}]
+
+The rule carries no parameters, so there is nothing about it to configure and
+nothing further to request. What this document cannot say is when it arrived or
+what argued it. The passage also said that if signatures were ever wanted it
+would be a decision record rather than a line added here, and no such record is
+in this tree:
+
+    git ls-tree --name-only origin/main docs/decisions/
+    docs/decisions/0001-means.md
+    docs/decisions/0002-existing-core.md
+    docs/decisions/0003-custom-fields.md
+    docs/decisions/0004-change-log.md
+    docs/decisions/0005-money-and-time.md
+    docs/decisions/0006-api-shape.md
+    docs/decisions/0007-reporting.md
+    docs/decisions/0008-workflow.md
+    docs/decisions/0009-web-client.md
+    docs/decisions/0010-mobile.md
+    docs/decisions/0011-connectors.md
+
+Whether one is owed now that the setting is in force is open on #187 and is not
+answered by recording the state, because writing the record in the change that
+corrected the quotation would be deciding it in passing.
 
 ## The contexts
 

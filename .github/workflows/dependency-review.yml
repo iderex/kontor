@@ -22,12 +22,17 @@ jobs:
   #     {"name":"gate","target":"branch"}
   #     gh api repos/iderex/kontor/rulesets/20486686 \
   #       --jq '{required: [.rules[].type], checks: [.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context]}'
-  #     {"required":["deletion","non_fast_forward","pull_request"],"checks":[]}
+  #     {"required":["deletion","non_fast_forward","pull_request","required_signatures"],"checks":[]}
   #
   # So nothing was matching this check name, and the reason for leaving it
-  # derived from the job id was a mechanism nobody had looked at. Which checks
-  # stand in front of the default branch is #108, and when that lands it will
-  # match names that are written down rather than names that fall out of a key.
+  # derived from the job id was a mechanism nobody had looked at. The `checks`
+  # list is still empty, which is the half this comment rests on and the half
+  # that has not moved. What did move is the rule list: the output above ended
+  # at "pull_request" until the commit carrying this line, and re-running the
+  # command returns a fourth entry. #187 is where that was found, and
+  # docs/required-checks.md is where the names this repository asks to stand in
+  # front of the branch are written down. #108 named them and is closed; naming
+  # them is not the same act as requesting them, and nothing here waits on it.
   dependency-review:
     name: Review new dependencies against the advisory database
     runs-on: ubuntu-latest
