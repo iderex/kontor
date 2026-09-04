@@ -6,12 +6,25 @@ already stands in front of the default branch of the public repository
 it rather than remembering it:
 
     gh api repos/iderex/jellyfin-plugin-sso/rulesets --jq '.[] | "\(.id) \(.name)"'
-    18802863 Protect main and 5.0
+    18802863 Protect main, 4.4 and 5.0
     gh api repos/iderex/jellyfin-plugin-sso/rulesets/18802863 \
       --jq '{enforcement, bypass:.bypass_actors, required:[.rules[].parameters.required_status_checks[]?.context]}'
-    {"bypass":[],"enforcement":"active","required":["build","ABI floor build","Package (JPRM) / Build package","Package (JPRM) / Generate SBOM","CodeQL","Analyze (csharp)","DCO sign-off","Deterministic PR-hygiene checks","Enforce greppable invariants","Reject Trojan Source Unicode","Audit workflows (zizmor)","prettier","dependency-review"]}
+    {"bypass":[],"enforcement":"active","required":["build","ABI floor build","Package (JPRM) / Build package","CodeQL","Analyze (csharp)","DCO sign-off","Deterministic PR-hygiene checks","Enforce greppable invariants","Reject Trojan Source Unicode","Audit workflows (zizmor)","prettier","dependency-review"]}
 
-Parity does not mean copying thirteen names. Some of them are about building a
+That output moved under this document and this paragraph says how, because
+everything below is an accounting over it. The ruleset was pasted here as
+`Protect main and 5.0` and the set as thirteen names including
+`Package (JPRM) / Generate SBOM`. Both were true when they were written. Read
+again on 2026-09-04 by re-running the two commands above, the ruleset is named
+`Protect main, 4.4 and 5.0` and the set is twelve, and the entry for the one it
+lost says below what that does and does not change here. That target is another
+repository, so its set moves without anybody touching a file in this tree, and
+nothing here would have noticed: `docs-scan` judges that a reference resolves
+and that the words are the ones `documentation-words` names, and no check here
+re-executes a command a document quotes to compare what it printed. #189 is
+where that was found and #187 is the same gap on a call about this repository.
+
+Parity does not mean copying twelve names. Some of them are about building a
 plugin against a host application and publishing it to a catalogue, which a self
 hosted product with its own database does not do. Some have a counterpart under a
 different name because the languages differ, and this project has two toolchains
@@ -50,10 +63,19 @@ The target packages a plugin for a catalogue; the artefact here is an image an
 operator runs beside a database, and #119 requires that it actually runs rather
 than only that it builds.
 
-`Package (JPRM) / Generate SBOM`. Matched by #103, which publishes third party
-notices and a bill of materials. The obligation is stronger here than there,
-because the licence in this tree makes the notices a legal artefact rather than a
-courtesy.
+`Package (JPRM) / Generate SBOM`. No longer in the target's required set, and
+kept here anyway. It was matched by #103, which publishes third party notices
+and a bill of materials, and the reason written for it never rested on parity:
+the licence in this tree makes the notices a legal artefact rather than a
+courtesy, which is an obligation this project has whether or not another
+repository requires a check for it. So what the target dropped is the anchor
+and not the argument, and deleting the entry would take #103's stated origin
+with it for a reason that was never the whole of why it is here.
+
+It is the one entry under this heading that the heading no longer describes,
+and it is left saying so rather than moved, because where an entry belongs once
+the target stops requiring it is a question about what this map is for. That is
+open on #189 and is not settled by recording what was read.
 
 `CodeQL` and `Analyze (csharp)`. These two contexts are one mechanism in the
 target, the second being the language specific job the first schedules. Replaced
@@ -112,17 +134,23 @@ delivered by #3. The target has one formatter because it has one language.
 `dependency-review`. Matched, already running. The job carries no explicit name,
 so the context is the job id, which is the arrangement the target relies on too.
 
-The thirteen therefore account for as follows, and the arithmetic is written out
+The twelve therefore account for as follows, and the arithmetic is written out
 because a count is the thing a reader is most likely to take on trust. Four are
 already matched by a check running here under the identical context name, which
-are sign off, the Unicode guard, the workflow audit and dependency review. Two
-are matched by a named counterpart that does not exist yet, which are the bill of
-materials and the greppable invariants. Two become two jobs each because of the
-second toolchain, which are the build and the formatter. Two are one mechanism
-appearing as two contexts and are replaced by the three language jobs of #109. Two
-are replaced by counterparts for a product of this shape, which are the floor
-build and the image build. And one had no delivering issue at all until this map
-opened #132. That is four, two, two, two, two and one, which is thirteen.
+are sign off, the Unicode guard, the workflow audit and dependency review. One is
+matched by a named counterpart that does not exist yet, which is the greppable
+invariants. Two become two jobs each because of the second toolchain, which are
+the build and the formatter. Two are one mechanism appearing as two contexts and
+are replaced by the three language jobs of #109. Two are replaced by counterparts
+for a product of this shape, which are the floor build and the image build. And
+one had no delivering issue at all until this map opened #132. That is four, one,
+two, two, two and one, which is twelve.
+
+The bill of materials was the second term of that arithmetic and is not a term of
+it now, because the context it accounted for is not in the set being accounted
+for. Its entry above is kept for a reason of its own and is outside this count
+rather than quietly inside it, which is the difference between a number that
+still adds up and one that has been made to.
 
 ## The practices the target runs without requiring them
 
@@ -218,6 +246,6 @@ should take: the map is not allowed to say a thing is covered when nothing cover
 it, and it is not allowed to leave a hole with no home either.
 
 What the map cannot do is judge whether a counterpart is a good one. That the
-question was asked for each of the thirteen is checkable, because the answer is
-written down. Whether an answer is right is a judgement, and the review is where
-a wrong one is caught.
+question was asked for each of the twelve, and for the one entry the target has
+since dropped, is checkable, because the answer is written down. Whether an
+answer is right is a judgement, and the review is where a wrong one is caught.
