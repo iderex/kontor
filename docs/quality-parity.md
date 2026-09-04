@@ -75,7 +75,10 @@ with it for a reason that was never the whole of why it is here.
 It is the one entry under this heading that the heading no longer describes,
 and it is left saying so rather than moved, because where an entry belongs once
 the target stops requiring it is a question about what this map is for. That is
-open on #189 and is not settled by recording what was read.
+open on #191, which carries the three answers available and what each costs, and
+it is not settled by recording what was read. This sentence named #189, which is
+the issue that landed the correction above and is closed, so the question had a
+pointer and no home.
 
 `CodeQL` and `Analyze (csharp)`. These two contexts are one mechanism in the
 target, the second being the language specific job the first schedules. Replaced
