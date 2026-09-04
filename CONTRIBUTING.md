@@ -860,7 +860,17 @@ the repository rather than a habit:
     20486686
     gh api repos/iderex/kontor/rulesets/20486686 \
       --jq '{enforcement, bypass: .bypass_actors, required: [.rules[].type]}'
-    {"bypass":[],"enforcement":"active","required":["deletion","non_fast_forward","pull_request"]}
+    {"bypass":[],"enforcement":"active","required":["deletion","non_fast_forward","pull_request","required_signatures"]}
+
+That output ended at `pull_request` until this commit, and the live ruleset
+returns a fourth entry. It was found by re-running the command rather than
+reading the line pasted beneath it, which is this document's own rule about
+evidence applied to this document. Nothing here would have caught it:
+`docs-scan` judges that a reference resolves and that the words are the ones
+`documentation-words` names, and no check re-executes a command a document
+quotes to compare what it printed. What the fourth entry asks of a contributor
+is under `## Sign off your work` below, and what the ruleset requires is
+recorded in `docs/required-checks.md`.
 
 An issue says three things.
 
@@ -898,6 +908,47 @@ the commit and the exact line it wanted. Confirm it ran against your own head:
 
     gh api "repos/iderex/kontor/commits/$(git rev-parse HEAD)/check-runs" \
       --jq '.check_runs[] | select(.name | test("DCO")) | "\(.name) \(.conclusion)"'
+
+The trailer is not a signature, and the ruleset asks for both. A rule on the
+default branch requires a verified signature, and it has no bypass actors, so it
+is required of everybody including me:
+
+    gh api repos/iderex/kontor/rulesets/20486686 \
+      --jq '{bypass: .bypass_actors, required: [.rules[].type]}'
+    {"bypass":[],"required":["deletion","non_fast_forward","pull_request","required_signatures"]}
+
+    gh api "repos/iderex/kontor/commits?per_page=6" \
+      --jq '.[] | "\(.sha[0:9])\t\(.commit.verification.verified)\t\(.commit.verification.reason)"'
+    0ac6a7fbc	true	valid
+    99e7445ae	true	valid
+    d580df6ea	true	valid
+    21be86ddf	true	valid
+    5b3d5ccaf	true	valid
+    c9d3295da	true	valid
+
+The two mechanisms answer different questions and neither stands in for the
+other: a signature says a key held the commit, and the trailer says the author
+asserts the right to contribute it. Exactly which commits the platform walks
+when it applies that rule is the platform's answer rather than this tree's, and
+it is not restated here; what is checkable from here is that six of six commits
+on the default branch carry a valid signature and that the rule is active with
+nobody exempt.
+
+`docs/required-checks.md` said this rule was not requested, for the reason that
+the trailer had been chosen instead. The rule arrived, that document now records
+what was read back, and no decision record in this tree argues the setting, which
+is what #187 leaves open rather than settles.
+
+A signing failure is a stop rather than an obstacle to route around. The way past
+it is one word, in either spelling:
+
+    git commit --no-gpg-sign
+    git -c commit.gpgsign=false commit
+
+Neither is refused before the merge. Nothing in this tree reads a signature, so a
+bypassed commit builds, tests and reviews exactly like a good one, and the only
+thing that says otherwise is the merge at the end of the line. Fix the signing
+instead.
 
 ## Every test runs headless and unelevated
 
