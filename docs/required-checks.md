@@ -54,14 +54,27 @@ than a commit that has already happened. What it costs is the case it does not
 distinguish: the pull request rule's own parameters say who has to read it.
 
     gh api repos/iderex/kontor/rulesets/20486686 --jq '.rules[] | select(.type=="pull_request") | .parameters'
-    {"allowed_merge_methods":["merge","squash","rebase"],"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_approving_review_count":0,"required_review_thread_resolution":false,"required_reviewers":[]}
+    {"allowed_merge_methods":["merge","squash","rebase"],"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_extra_approval_for_unattributed_changes":true,"require_last_push_approval":false,"required_approving_review_count":0,"required_review_thread_resolution":false,"required_reviewers":[]}
 
-A pull request is required and an approval is not. That is the honest state of a
-project with one person in it, and it is stated here rather than left for
-somebody to discover from a merge that nobody reviewed. Raising the approval
-count above zero is not requested, because a requirement one person cannot
-satisfy is a requirement that gets bypassed or removed, and this repository has
-no bypass actors to do the first with.
+A pull request is required and an approval is not, in the general case, which
+is the honest state of a project with one person in it and is stated here
+rather than left for somebody to discover from a merge that nobody reviewed.
+`required_approving_review_count` is zero and raising it is not requested,
+because a requirement one person cannot satisfy is a requirement that gets
+bypassed or removed, and this repository has no bypass actors to do the first
+with.
+
+The general case is not the whole of it, and this paragraph said it was.
+`require_extra_approval_for_unattributed_changes` is in that block and is set,
+and it was not in the output pasted here until the commit carrying this
+sentence. Nobody changed a file for it to arrive: the block is the platform's
+and it gained a field. What the field does is the platform's behaviour rather
+than anything readable from this checkout, so it is named and not described,
+because a description here would be a second copy of somebody else's rule
+drifting against it. What can be read is that it did not stand in front of the
+three changes merged on 2026-09-04, none of which carried an approval, so it is
+a condition on some changes rather than on every one. #193 is where that was
+found.
 
 Force pushes are refused, by the `non_fast_forward` rule, and it is wanted for a
 reason narrower than tidiness. Every claim in this repository's documents is
